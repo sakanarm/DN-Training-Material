@@ -1,0 +1,13 @@
+# local preview build (python scripts/preview.py)
+.preview/
+
+# per-machine Claude Code settings
+.claude/settings.local.json
+
+# OS / editor junk
+Thumbs.db
+desktop.ini
+.DS_Store
+__pycache__/
+*.pyc
+~$*
