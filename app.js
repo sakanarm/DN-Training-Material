@@ -119,6 +119,7 @@ function cleanProg(x) {
     p.modules[m.id] = o;
   }
   p.updatedAt = num(x.updatedAt);
+  if (DA.daily) { const rv = DA.daily.clean(x.review); if (rv) p.review = rv; }
   return p;
 }
 function mergeProg(a, b) {
@@ -145,6 +146,7 @@ function mergeProg(a, b) {
     o.modules[m.id] = r;
   }
   o.updatedAt = Math.max(a.updatedAt, b.updatedAt);
+  if (DA.daily) { const rv = DA.daily.merge(a.review, b.review); if (rv) o.review = rv; }
   return o;
 }
 function cleanSignoff(x) {
@@ -236,6 +238,7 @@ function save(now) {
   S.dirty = true; setSync('pending');
   clearTimeout(saveT); saveT = setTimeout(flush, now ? 0 : 500);
 }
+DA.save = save;
 const errCode = e => (e && typeof e.code === 'string' ? e.code : 'unavailable');
 async function retryOnce(fn) {
   try { return await fn(); }
@@ -305,7 +308,7 @@ function subscribeProgress() {
       const fresh = !(snap.metadata && snap.metadata.fromCache);
       if (fresh && !settled) {
         settled = true; clearTimeout(timer);
-        const needWrite = hasAny(S.prog) && (!cloud || JSON.stringify(S.prog) !== JSON.stringify(cloud));
+        const needWrite = (hasAny(S.prog) || !!(S.prog.review && Object.keys(S.prog.review.q).length)) && (!cloud || JSON.stringify(S.prog) !== JSON.stringify(cloud));
         if (needWrite) save(true); else if (!S.writing) setSync('cloud');
       }
       if (JSON.stringify(S.prog) !== before) softRender();
@@ -374,7 +377,10 @@ const LOGO = `<svg viewBox="0 0 24 24" fill="#fff" aria-hidden="true"><path d="M
 const MASCOT = `<img class="mascot denta" src="img/denta.png" alt="" width="179" height="256" aria-hidden="true">`;
 const cloud = (cls, style) => `<svg class="cloud ${cls || ''}" style="${style}" viewBox="0 0 200 100" aria-hidden="true"><path d="M38 86C14 86 12 60 34 56C30 34 60 24 76 40C84 18 120 16 128 42C150 30 176 46 168 64C186 68 184 90 162 86Z"/></svg>`;
 const twinkle = style => `<svg class="twinkle" style="${style}" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z"/></svg>`;
-DA.MASCOT = MASCOT; DA.cloud = cloud;
+/* เดนต้าโผล่มุมการ์ดผลคะแนน พร้อมคำพูดสั้น ๆ */
+const rDenta = say => `<div class="r-denta" aria-hidden="true"><span class="r-say">${esc(say)}</span>${MASCOT}</div>`;
+const allPassed = () => DRAFT.length > 0 && DRAFT.every(m => postPassed(gm(m.id)));
+DA.MASCOT = MASCOT; DA.cloud = cloud; DA.rDenta = rDenta;
 function renderShell() {
   $('#app').innerHTML = `
   <div class="ribbon"><div class="wrap"><span><span class="dot"></span><b>ต้นแบบ (Demo)</b> เพื่อนำเสนอผู้บริหาร · เนื้อหารอทันตแพทย์ตรวจทาน</span><span>Smile Gallery Dental Clinic</span></div></div>
@@ -385,6 +391,7 @@ function renderShell() {
     </button>
     <nav class="nav" aria-label="เมนูหลัก">
       <button data-act="go" data-r="home" data-nav="home">${ic('home')}หน้าหลัก</button>
+      <button data-act="go" data-r="daily" data-nav="daily">${ic('refresh')}ทบทวนรายวัน<i class="ndot" aria-hidden="true"></i></button>
       <button data-act="go" data-r="results" data-nav="results">${ic('award')}ผลการเรียน</button>
       <button data-act="go" data-r="hr" data-nav="hr">${ic('chart')}สำหรับ HR</button>
     </nav>
@@ -400,14 +407,16 @@ function renderShell() {
   </div></footer>
   <nav class="tabbar" aria-label="เมนูหลัก">
     <button data-act="go" data-r="home" data-nav="home">${ic('home')}หน้าหลัก</button>
+    <button data-act="go" data-r="daily" data-nav="daily">${ic('refresh')}ทบทวน<i class="ndot" aria-hidden="true"></i></button>
     <button data-act="go" data-r="results" data-nav="results">${ic('award')}ผลการเรียน</button>
     <button data-act="go" data-r="hr" data-nav="hr">${ic('chart')}HR</button>
   </nav>`;
   renderSync(); renderPresent();
 }
 function renderNav() {
-  const n = S.route.name, cur = n === 'results' ? 'results' : (n === 'hr' || n === 'person') ? 'hr' : 'home';
+  const n = S.route.name, cur = (n === 'results' || n === 'cert') ? 'results' : (n === 'hr' || n === 'person') ? 'hr' : n === 'daily' ? 'daily' : 'home';
   $$('[data-nav]').forEach(b => b.setAttribute('aria-current', b.dataset.nav === cur ? 'page' : 'false'));
+  if (DA.daily) DA.daily.navDot();
 }
 const SYNC_T = { connecting: 'กำลังเชื่อมต่อ…', cloud: 'บันทึกขึ้นระบบแล้ว', saving: 'กำลังบันทึก…', pending: 'รอส่งขึ้นระบบ', local: 'บันทึกในเครื่องนี้' };
 const WHY_T = {
@@ -449,8 +458,10 @@ function renderMain() {
   if (r.name === 'mod') renderModule(main);
   else if (r.name === 'profile') main.innerHTML = profileHTML();
   else if (r.name === 'results') main.innerHTML = resultsHTML();
+  else if (r.name === 'cert') renderCert(main);
   else if (r.name === 'hr' && DA.hr) DA.hr.render(main);
   else if (r.name === 'person' && DA.hr) DA.hr.renderPerson(main, r.id);
+  else if (r.name === 'daily' && DA.daily) DA.daily.render(main);
   else { S.route = { name: 'home' }; main.innerHTML = homeHTML(); }
   renderNav();
 }
@@ -458,6 +469,7 @@ DA.renderMain = renderMain;
 function softRender() {
   const n = S.route.name;
   if (n === 'home' || n === 'results') renderMain();
+  else if (n === 'daily' && DA.daily) DA.daily.navDot();
   else if (n === 'mod') { const rail = $('#rail'); if (rail) rail.outerHTML = railHTML(modById(S.route.id)); }
 }
 function openModule(id, step, peek) {
@@ -481,7 +493,7 @@ function homeHTML() {
   const nextBtn = !pf.name && !S.present
     ? `<button class="next" data-act="go" data-r="profile"><span><small>เริ่มต้นใช้งาน</small><b>กรอกชื่อและสาขาของคุณ</b></span><span class="arr">${ic('arrowR')}</span></button>`
     : na ? `<button class="next" data-act="resume"><span><small>${esc(na.sub)}</small><b>ต่อไป: ${esc(na.title)}</b></span><span class="arr">${ic('arrowR')}</span></button>`
-      : `<button class="next" data-act="go" data-r="results"><span><small>เรียนครบทุกบทแล้ว</small><b>ดูผลการเรียนทั้งหมด</b></span><span class="arr">${ic('arrowR')}</span></button>`;
+      : `<button class="next" data-act="go" data-r="cert"><span><small>เรียนครบทุกบทแล้ว เก่งมาก!</small><b>รับใบประกาศนียบัตร</b></span><span class="arr">${ic('award')}</span></button>`;
   const types = ['tray', 'tooth', 'clock', 'scenario', 'sequence', 'match', 'spot'];
   const showcase = types.map(t => {
     const m = DRAFT.find(x => x.practice.some(p => p.type === t)); if (!m) return '';
@@ -521,6 +533,7 @@ function homeHTML() {
         <div><h3>${who}</h3><div class="who">${pf.branch ? esc(pf.branch) : 'ความคืบหน้าของคุณ'}</div></div>
       </div>
       ${nextBtn}
+      ${DA.daily ? DA.daily.homeCard() : ''}
       <div class="mini">
         <div><b>${passed}/${DRAFT.length}</b><span>บทที่สอบผ่าน</span></div>
         <div><b>${pDone}/${nPractice}</b><span>แบบฝึกที่ทำแล้ว</span></div>
@@ -543,6 +556,8 @@ function homeHTML() {
       ${[['วัดพื้นฐานก่อนเรียน', 'แบบทดสอบสั้น ๆ เพื่อดูว่าเริ่มจากตรงไหน'], ['เรียน + ดูวิดีโอสาธิต', 'เนื้อหาย่อยทีละบท มีคำถามเช็กความเข้าใจระหว่างทาง'], ['ฝึกเหมือนทำจริง', 'จัดถาด หาฟัน สถานการณ์จำลอง ทำซ้ำได้ไม่จำกัด'], ['สอบหลังเรียน', `ผ่านที่ ${PASS}% และเห็นพัฒนาการเทียบก่อนเรียน`], ['ประเมินหน้างาน', 'หัวหน้าหรือทันตแพทย์พี่เลี้ยงรับรองทักษะในคลินิก']]
         .map((s, i) => `<div class="jstep"><span class="n">${i + 1}</span><div><h4>${s[0]}</h4><p>${s[1]}</p></div>${ic('arrowR', 'arrow')}</div>`).join('')}
     </div>
+    <div class="jend"><span class="medal">${ic('award')}</span><div class="txt"><h4>ครบทุกบท รับใบประกาศนียบัตร</h4><p>สอบหลังเรียนผ่านครบ ${DRAFT.length} บท ระบบออกใบประกาศในชื่อของผู้เรียนให้ดาวน์โหลดได้ทันที</p></div>
+      <button class="btn btn-ghost" data-act="go" data-r="cert">${ic(passed === DRAFT.length ? 'download' : 'eye')}${passed === DRAFT.length ? 'รับใบประกาศ' : 'ดูตัวอย่าง'}</button></div>
   </div></section>
 
   <section class="section alt"><div class="wrap">
@@ -670,7 +685,7 @@ function quiz(host, items, opt) {
     if (btns[0].disabled) return;
     btns.forEach(b => { b.disabled = true; });
     const ok = i === q.a; if (ok) right++;
-    log.push({ q: q.q, c: q.c, a: q.a, pick: i, why: q.why });
+    log.push({ q: q.q, img: q.img, c: q.c, a: q.a, pick: i, why: q.why });
     if (!opt.feedback) { btns[i].classList.add('pick'); setTimeout(next, 260); return; }
     btns[q.a].classList.add('ok'); if (!ok) btns[i].classList.add('no');
     btns.forEach((b, j) => { if (j !== q.a && j !== i) b.classList.add('dim'); });
@@ -689,7 +704,7 @@ function renderPre(m, st, pane) {
   if (md.pre && !S.present) {
     pane.innerHTML = `<div class="card fade-in">${head}<h2>แบบทดสอบก่อนเรียน</h2>
       <div class="result"><div>${ring(md.pre.score, { size: 92 })}</div><div><h3>คะแนนพื้นฐานของคุณ</h3><p>เราจะใช้คะแนนนี้เทียบกับคะแนนหลังเรียน เพื่อดูพัฒนาการ (ทำได้ครั้งเดียว)</p>
-      <div class="acts"><button class="btn btn-cta" data-act="step" data-s="${firstL}">เริ่มบทเรียนแรก ${ic('arrowR')}</button></div></div></div></div>${stepNav(m, st)}`;
+      <div class="acts"><button class="btn btn-cta" data-act="step" data-s="${firstL}">เริ่มบทเรียนแรก ${ic('arrowR')}</button></div></div>${rDenta('ไปเรียนกัน!')}</div></div>${stepNav(m, st)}`;
     return;
   }
   pane.innerHTML = `<div class="card fade-in">${head}
@@ -708,7 +723,7 @@ function renderPre(m, st, pane) {
         const msg = score >= 80 ? 'พื้นฐานดีมาก! บทเรียนนี้จะช่วยทบทวนและเติมรายละเอียดของคลินิก' : score >= 50 ? 'มีพื้นฐานอยู่บ้างแล้ว ไปเติมส่วนที่ขาดในบทเรียนกัน' : 'ไม่เป็นไร นี่คือจุดเริ่มต้น บทเรียนถัดไปจะพาไปทีละขั้น';
         card.innerHTML = `${head.replace(/chip-ok[^<]*<\/span>/, '')}<h2>เสร็จแล้ว!</h2>
           <div class="result"><div>${ring(score, { size: 92 })}</div><div><h3>คะแนนก่อนเรียน ${score}%</h3><p>${msg}</p>
-          <div class="acts"><button class="btn btn-cta" data-act="step" data-s="${firstL}">เริ่มบทเรียนแรก ${ic('arrowR')}</button></div></div></div>`;
+          <div class="acts"><button class="btn btn-cta" data-act="step" data-s="${firstL}">เริ่มบทเรียนแรก ${ic('arrowR')}</button></div></div>${rDenta('เริ่มกันเลย!')}</div>`;
         refreshRail(m);
       }
     });
@@ -933,7 +948,8 @@ function runPractice(m, st) {
       res.innerHTML = `<div class="result${score >= 80 ? ' pass' : ''} fade-in">
         <div>${ring(score, { size: 92, col: score >= 80 ? 'var(--ok)' : 'var(--brand-text)' })}</div>
         <div><h3>${msg}</h3><p>${extra.note ? esc(extra.note) + ' · ' : ''}ใช้เวลา ${fmtTime(timeSec)} · คะแนนดีที่สุด ${best}%</p>
-        <div class="acts"><button class="btn btn-ghost" id="p-retry">${ic('refresh')}ลองอีกครั้ง</button>${nx ? `<button class="btn btn-cta" data-act="step" data-s="${esc(nx.id)}">ถัดไป: ${esc(nx.title)} ${ic('arrowR')}</button>` : ''}</div></div></div>`;
+        <div class="acts"><button class="btn btn-ghost" id="p-retry">${ic('refresh')}ลองอีกครั้ง</button>${nx ? `<button class="btn btn-cta" data-act="step" data-s="${esc(nx.id)}">ถัดไป: ${esc(nx.title)} ${ic('arrowR')}</button>` : ''}</div></div>
+        ${rDenta(score >= 80 ? 'เก่งมาก!' : score >= 50 ? 'อีกนิดเดียว!' : 'สู้ ๆ นะ!')}</div>`;
       $('#p-retry').addEventListener('click', () => { runPractice(m, st); $('#stage').scrollIntoView({ block: 'start', behavior: 'smooth' }); });
       refreshRail(m);
       if (score >= 80) confetti();
@@ -960,15 +976,16 @@ function renderPost(m, st, pane) {
       feedback: true, onDone: (score, log) => {
         const d = wm(m.id), o = d.post, ok = score >= PASS;
         d.post = { best: Math.max(score, o ? o.best : 0), last: score, attempts: (o ? o.attempts : 0) + 1, at: Date.now(), passedAt: o && o.passedAt ? o.passedAt : ok ? Date.now() : 0 };
+        if (DA.daily) DA.daily.seed(m, log);
         save();
         const pre = d.pre ? d.pre.score : null;
         card.innerHTML = `${head.replace(/<span class="chip (chip-ok|)">ดีที่สุด[^<]*<\/span>/, '')}<h2>${ok ? 'ยินดีด้วย สอบผ่านแล้ว!' : 'ยังไม่ถึงเกณฑ์ ลองอีกครั้งนะ'}</h2>
           <div class="result${ok ? ' pass' : ''}"><div>${ring(score, { size: 100, col: ok ? 'var(--ok)' : 'var(--accent)' })}</div><div>
             <h3>คะแนนหลังเรียน ${score}%</h3>
             <p>${pre != null ? `ก่อนเรียน ${pre}% → หลังเรียน ${score}% (${score - pre >= 0 ? '+' : ''}${score - pre} คะแนน) · ` : ''}เกณฑ์ผ่าน ${PASS}%</p>
-            <div class="acts">${ok ? `<button class="btn btn-cta" data-act="step" data-s="check">ขั้นต่อไป: ประเมินหน้างาน ${ic('arrowR')}</button>` : `<button class="btn btn-cta" data-act="step" data-s="${esc('L:' + m.lessons[0].key)}">${ic('book')}ทบทวนบทเรียน</button>`}
+            <div class="acts">${ok && allPassed() ? `<button class="btn btn-cta" data-act="go" data-r="cert">${ic('award')}รับใบประกาศนียบัตร</button>` : ''}${ok ? `<button class="btn ${allPassed() ? 'btn-ghost' : 'btn-cta'}" data-act="step" data-s="check">ขั้นต่อไป: ประเมินหน้างาน ${ic('arrowR')}</button>` : `<button class="btn btn-cta" data-act="step" data-s="${esc('L:' + m.lessons[0].key)}">${ic('book')}ทบทวนบทเรียน</button>`}
             <button class="btn btn-ghost" data-act="step" data-s="post">${ic('refresh')}ทำอีกครั้ง</button></div>
-          </div></div>
+          </div>${rDenta(ok ? (allPassed() ? 'จบหลักสูตรแล้ว!' : 'ผ่านแล้ว เย้!') : 'ลองใหม่นะ!')}</div>
           <h4 style="margin-top:26px;font-weight:500">ทบทวนคำตอบ</h4>
           <div class="review">${log.map((r, i) => `<details${r.pick !== r.a ? ' open' : ''}><summary><span class="mk ${r.pick === r.a ? 'ok' : 'no'}">${r.pick === r.a ? '✓' : '✕'}</span><span>${i + 1}. ${esc(r.q)}</span></summary>
             <div class="ans">${r.pick !== r.a ? `คุณตอบ: ${esc(r.c[r.pick])}<br>` : ''}<b>คำตอบที่ถูก: ${esc(r.c[r.a])}</b><br>${esc(r.why || '')}</div></details>`).join('')}</div>`;
@@ -1035,15 +1052,33 @@ function resultsHTML() {
   const note = S.mode === 'cloud'
     ? `<div class="note ok">${ic('cloud')}<div><b style="font-weight:500">คะแนนส่งถึงหัวหน้าและ HR อัตโนมัติ</b><br>${esc(syncWhy())}</div></div>`
     : `<div class="note warn">${ic('info')}<div><b style="font-weight:500">${S.mode === 'connecting' ? 'กำลังเชื่อมต่อระบบ' : 'คะแนนเก็บในเครื่องนี้'}</b><br>${esc(syncWhy())}${S.mode === 'local' ? '<br>ใช้ปุ่ม “คัดลอกสรุปผล” เพื่อส่งให้หัวหน้าได้' : ''}</div></div>`;
+  const nPass = posts.filter(x => x.best >= PASS).length, done = allPassed();
+  const say = done ? 'เรียนจบครบทุกบทแล้ว เก่งที่สุด! รับใบประกาศได้เลย'
+    : !hasAny(S.prog) ? 'ยังไม่ได้เริ่มเลย ไปเรียนบทแรกกันนะ!'
+      : nPass ? `สอบผ่านแล้ว ${nPass} บท อีก ${DRAFT.length - nPass} บทก็จบหลักสูตรแล้ว!`
+        : 'เริ่มต้นได้ดีมาก ทำต่อไปเรื่อย ๆ นะ';
+  const certBtn = done ? `<button class="btn btn-cta" data-act="go" data-r="cert">${ic('award')}รับใบประกาศนียบัตร</button>`
+    : S.present ? `<button class="btn btn-cta" data-act="go" data-r="cert">${ic('eye')}ดูตัวอย่างใบประกาศ</button>`
+      : `<div class="lockchip">${ic('lock')}<span>สอบผ่านครบ ${DRAFT.length} บท เพื่อรับใบประกาศนียบัตร</span></div>`;
+  const sub = [p.nickname ? 'ชื่อเล่น ' + esc(p.nickname) : '', p.branch ? esc(p.branch) : ''].filter(Boolean).join(' · ');
   return `<section class="section-tight"><div class="wrap">
-    <div class="sec-head"><div><div class="eyebrow">ผลการเรียนของฉัน</div><h2>${p.name ? esc(p.name) : 'ผู้เรียน'}</h2></div>
-      <div style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn btn-ghost" data-act="go" data-r="profile">${ic('edit')}แก้ไขข้อมูล</button><button class="btn btn-ghost" data-act="copy-sum">${ic('copy')}คัดลอกสรุปผล</button></div></div>
-    <div class="kpis" style="grid-template-columns:repeat(4,1fr)">
+    <div class="rhero fade-in">
+      ${cloud('drift slow', 'right:22%;top:-26px;width:150px')}
+      ${twinkle('left:150px;top:18px;width:20px')}
+      <div class="rhero-art bob">${MASCOT}</div>
+      <div class="rhero-body"><div class="eyebrow">${ic('award')}ผลการเรียนของฉัน</div>
+        <h2>${p.name ? esc(p.name) : 'ผู้เรียน'}</h2>${sub ? `<div class="who">${sub}</div>` : ''}
+        <div class="bubble">${esc(say)}</div></div>
+      <div class="rhero-acts">${certBtn}
+        <div class="row"><button class="btn btn-ghost" data-act="go" data-r="profile">${ic('edit')}แก้ไขข้อมูล</button><button class="btn btn-ghost" data-act="copy-sum">${ic('copy')}คัดลอกสรุปผล</button></div></div>
+    </div>
+    <div class="kpis k4" style="margin:0 0 22px">
       <div class="kpi"><span>สาขา</span><b style="font-size:20px">${p.branch ? esc(p.branch) : '–'}</b><small>${p.startDate ? 'เริ่มงาน ' + esc(fmtDate(new Date(p.startDate).getTime())) : '&nbsp;'}</small></div>
-      <div class="kpi"><span>บทที่สอบผ่าน</span><b>${posts.filter(x => x.best >= PASS).length}/${DRAFT.length}</b><small>เกณฑ์ ${PASS}%</small></div>
+      <div class="kpi"><span>บทที่สอบผ่าน</span><b>${nPass}/${DRAFT.length}</b><small>เกณฑ์ ${PASS}%</small></div>
       <div class="kpi"><span>เฉลี่ยก่อนเรียน</span><b>${aPre == null ? '–' : aPre + '%'}</b><small>${pres.length} บท</small></div>
       <div class="kpi"><span>เฉลี่ยหลังเรียน</span><b class="${aPost != null && aPre != null && aPost > aPre ? 'up' : ''}">${aPost == null ? '–' : aPost + '%'}</b><small>${aPost != null && aPre != null ? (aPost - aPre >= 0 ? '+' : '') + (aPost - aPre) + ' คะแนน' : '&nbsp;'}</small></div>
     </div>
+    ${DA.daily ? DA.daily.resultsStrip() : ''}
     ${note}
     <div class="tbl-wrap" style="margin-top:16px"><table>
       <thead><tr><th>บทเรียน</th><th class="num">ก่อนเรียน</th><th class="num">แบบฝึก</th><th class="num">หลังเรียน</th><th>สถานะ</th></tr></thead>
@@ -1051,6 +1086,169 @@ function resultsHTML() {
     <div style="margin-top:22px;display:flex;justify-content:flex-end"><button class="btn btn-text" data-act="reset">${ic('trash')}เริ่มใหม่ทั้งหมด</button></div>
   </div></section>`;
 }
+/* ── ใบประกาศนียบัตร (วาดบน canvas → ดาวน์โหลด PNG) ── */
+function certInfo() {
+  const p = S.prog.profile, ok = allPassed();
+  const posts = DRAFT.map(m => gm(m.id).post).filter(Boolean);
+  const avgPost = posts.length ? Math.round(posts.reduce((a, x) => a + x.best, 0) / posts.length) : null;
+  const passAt = Math.max(0, ...posts.map(x => x.passedAt || 0));
+  const date = new Date(ok && passAt ? passAt : Date.now());
+  const seed = String(S.uid || S.localUid || p.name || 'demo');
+  let h = 0; for (const ch of seed) h = (h * 31 + ch.codePointAt(0)) >>> 0;
+  const yy = String((date.getFullYear() + 543) % 100).padStart(2, '0');
+  return {
+    ok, name: (p.name || '').trim(), branch: (p.branch || '').trim().replace(/^สาขา\s*/, ''), avgPost, date,
+    nPass: posts.filter(x => x.best >= PASS).length,
+    no: `DA-${yy}-${String(h % 10000).padStart(4, '0')}`
+  };
+}
+function renderCert(main) {
+  const ci = certInfo();
+  main.innerHTML = `<section class="section-tight"><div class="wrap">
+    <div class="sec-head"><div><div class="eyebrow">${ic('award')}ใบประกาศนียบัตร</div>
+      <h2>${ci.ok ? 'ยินดีด้วย! คุณเรียนจบหลักสูตรแล้ว' : 'ตัวอย่างใบประกาศนียบัตร'}</h2>
+      <p>${ci.ok ? 'ดาวน์โหลดเก็บไว้ หรือพิมพ์ให้ทันตแพทย์และหัวหน้าสาขาลงนาม' : `ออกให้อัตโนมัติในชื่อของคุณ เมื่อสอบหลังเรียนผ่านครบ ${DRAFT.length} บท (ตอนนี้ผ่านแล้ว ${ci.nPass}/${DRAFT.length} บท)`}</p></div>
+      <div class="cert-acts"><button class="btn btn-ghost" data-act="go" data-r="results">${ic('arrowL')}ผลการเรียน</button>
+        <button class="btn btn-cta" data-act="cert-dl" id="cert-dl" disabled>${ic('download')}${ci.ok ? 'ดาวน์โหลด (PNG)' : 'ดาวน์โหลดตัวอย่าง'}</button></div></div>
+    <div class="cert-frame fade-in"><canvas id="cert" width="1754" height="1240" role="img" aria-label="${esc(`ใบประกาศนียบัตร DA Training Academy ${ci.name || 'ตัวอย่าง'}`)}"></canvas></div>
+    ${ci.ok ? '' : `<div class="note cert-tip">${ic('info')}<div>นี่คือตัวอย่างที่มีลายน้ำ “ตัวอย่าง” ชื่อและคะแนนจริงจะขึ้นเมื่อเรียนครบ ${S.prog.profile.name ? '' : '· กรอกชื่อในหน้า “แก้ไขข้อมูล” เพื่อให้ชื่อขึ้นบนใบประกาศ'}</div></div>`}
+  </div></section>`;
+  const cv = $('#cert');
+  drawCert(cv, ci).then(() => { const b = $('#cert-dl'); if (b && cv.isConnected) b.disabled = false; },
+    () => toast('วาดใบประกาศไม่สำเร็จ ลองรีเฟรชหน้าอีกครั้ง'));
+}
+async function loadBitmap(src) {
+  try { const r = await fetch(src); if (!r.ok) return null; return await createImageBitmap(await r.blob()); }
+  catch (e) { return null; }
+}
+async function drawCert(cv, ci) {
+  const F = '"Noto Sans Thai Looped","Noto Sans Thai",sans-serif';
+  try {
+    await Promise.all(['400', '600', '800'].map(w => document.fonts.load(`${w} 40px "Noto Sans Thai Looped"`, 'ใบประกาศนียบัตร ABC 0123')));
+  } catch (e) { /* ใช้ฟอนต์สำรองได้ */ }
+  const [logo, denta] = await Promise.all([loadBitmap('img/logo-smile-gallery.png'), loadBitmap('img/denta.png')]);
+  if (!cv.isConnected) return;
+  const x = cv.getContext('2d'), W = cv.width, H = cv.height, cx = W / 2;
+  const NAVY = '#002D73', RED = '#E0232E', SUN = '#F4D676', INK = '#2B2440', MUTED = '#5b5677';
+  const rr = (X, Y, w, h, r) => { x.beginPath(); x.roundRect(X, Y, w, h, r); };
+  const txt = (t, X, Y, font, col, align = 'center', ls = '0px') => {
+    x.font = font; x.fillStyle = col; x.textAlign = align; x.textBaseline = 'alphabetic';
+    if ('letterSpacing' in x) x.letterSpacing = ls; x.fillText(t, X, Y); if ('letterSpacing' in x) x.letterSpacing = '0px';
+  };
+  const CLOUD = new Path2D('M38 86C14 86 12 60 34 56C30 34 60 24 76 40C84 18 120 16 128 42C150 30 176 46 168 64C186 68 184 90 162 86Z');
+  const STAR = new Path2D('M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z');
+  const cloudAt = (X, Y, s) => { x.save(); x.translate(X, Y); x.scale(s, s); x.fillStyle = '#e4f0ff'; x.fill(CLOUD); x.lineWidth = 4 / s * 1.4; x.strokeStyle = NAVY; x.globalAlpha = .9; x.stroke(CLOUD); x.restore(); };
+  const starAt = (X, Y, s) => { x.save(); x.translate(X, Y); x.scale(s, s); x.fillStyle = SUN; x.fill(STAR); x.lineWidth = 1.6; x.strokeStyle = INK; x.stroke(STAR); x.restore(); };
+
+  /* พื้นหลัง + กระดาษ + กรอบ */
+  x.clearRect(0, 0, W, H);
+  x.fillStyle = '#f3f7ff'; x.fillRect(0, 0, W, H);
+  rr(34, 34, W - 68, H - 68, 34); x.fillStyle = '#fff'; x.fill(); x.lineWidth = 16; x.strokeStyle = NAVY; x.stroke();
+  rr(70, 70, W - 140, H - 140, 22); x.lineWidth = 6; x.strokeStyle = SUN; x.stroke();
+  rr(84, 84, W - 168, H - 168, 16); x.lineWidth = 1.5; x.strokeStyle = 'rgba(0,45,115,.25)'; x.stroke();
+  /* มุมกรอบ: จุดแดงเล็ก ๆ */
+  for (const [X, Y] of [[70, 70], [W - 70, 70], [70, H - 70], [W - 70, H - 70]]) {
+    x.beginPath(); x.arc(X, Y, 14, 0, Math.PI * 2); x.fillStyle = RED; x.fill(); x.lineWidth = 4; x.strokeStyle = NAVY; x.stroke();
+  }
+  /* ตกแต่ง */
+  cloudAt(104, 118, 1.25); cloudAt(96, 610, .85); cloudAt(W - 286, 596, .9);
+  starAt(380, 160, 1.6); starAt(W - 520, 300, 1.2); starAt(250, H - 330, 1.3); starAt(W - 180, H - 300, 1.5);
+
+  /* โลโก้ */
+  if (logo) { const lh = 92, lw = logo.width / logo.height * lh; x.drawImage(logo, cx - lw / 2, 116, lw, lh); }
+  else txt('Smile Gallery Dental Clinic', cx, 176, `800 44px ${F}`, NAVY);
+
+  /* หัวเรื่อง */
+  txt('ใบประกาศนียบัตร', cx, 330, `800 92px ${F}`, NAVY);
+  txt('CERTIFICATE OF COMPLETION', cx, 386, `800 30px ${F}`, RED, 'center', '9px');
+  txt('ขอมอบให้แก่', cx, 470, `400 34px ${F}`, MUTED);
+
+  /* ชื่อผู้เรียน + ไฮไลต์ปากกาเน้นข้อความ */
+  const name = ci.name || 'ชื่อ-นามสกุล ผู้เรียน';
+  let fs = 80; x.font = `800 ${fs}px ${F}`;
+  while (x.measureText(name).width > 1180 && fs > 48) { fs -= 4; x.font = `800 ${fs}px ${F}`; }
+  const nw = x.measureText(name).width;
+  rr(cx - nw / 2 - 34, 548 - fs * .38, nw + 68, fs * .5, 14); x.fillStyle = '#fff4cf'; x.fill();
+  txt(name, cx, 574, `800 ${fs}px ${F}`, ci.name ? INK : '#9a98ad');
+  x.beginPath(); x.moveTo(cx - 420, 612); x.lineTo(cx + 420, 612); x.lineWidth = 2; x.strokeStyle = 'rgba(43,36,64,.18)'; x.stroke();
+
+  /* รายละเอียดหลักสูตร */
+  txt('ได้ผ่านการอบรมหลักสูตรผู้ช่วยทันตแพทย์ DA Training Academy', cx, 676, `600 36px ${F}`, INK);
+  txt(`ครบทั้ง ${DRAFT.length} บทเรียน${ci.avgPost != null ? ` · คะแนนหลังเรียนเฉลี่ย ${ci.avgPost}%` : ''}${ci.branch ? ` · สาขา ${ci.branch}` : ''}`, cx, 730, `400 30px ${F}`, MUTED);
+  txt(`ให้ไว้ ณ วันที่ ${ci.date.toLocaleDateString('th-TH', { dateStyle: 'long' })}`, cx, 784, `600 30px ${F}`, NAVY);
+
+  /* ช่องลงนาม */
+  const sig = (X, label) => {
+    x.beginPath(); x.moveTo(X - 210, 970); x.lineTo(X + 210, 970); x.lineWidth = 2.4; x.strokeStyle = INK; x.stroke();
+    txt(label, X, 1016, `600 27px ${F}`, INK); txt('Smile Gallery Dental Clinic', X, 1054, `400 22px ${F}`, '#8a86a2');
+  };
+  sig(420, 'ทันตแพทย์ผู้ดูแลหลักสูตร'); sig(W - 420, 'หัวหน้าสาขา / ฝ่ายบุคคล');
+
+  /* ตราประทับกลางล่าง */
+  const sx = cx, sy = 960, R = 96;
+  x.save(); x.fillStyle = NAVY; x.strokeStyle = INK; x.lineWidth = 3;
+  for (const d of [-1, 1]) {
+    x.beginPath(); x.moveTo(sx + d * 26, sy + 40); x.lineTo(sx + d * 74, sy + 150); x.lineTo(sx + d * 46, sy + 136); x.lineTo(sx + d * 30, sy + 166); x.lineTo(sx + d * -8, sy + 60); x.closePath(); x.fill(); x.stroke();
+  }
+  x.beginPath();
+  for (let i = 0; i < 48; i++) { const a = i / 48 * Math.PI * 2, r = i % 2 ? R : R + 10; x.lineTo(sx + Math.cos(a) * r, sy + Math.sin(a) * r); }
+  x.closePath(); x.fillStyle = RED; x.fill(); x.lineWidth = 4; x.strokeStyle = INK; x.stroke();
+  x.beginPath(); x.arc(sx, sy, R - 14, 0, Math.PI * 2); x.lineWidth = 3; x.strokeStyle = '#fff'; x.stroke();
+  x.beginPath(); x.arc(sx, sy, R - 50, 0, Math.PI * 2); x.lineWidth = 2; x.strokeStyle = 'rgba(255,255,255,.7)'; x.stroke();
+  /* ตัวอักษรรอบวง */
+  const rt = '★ SMILE GALLERY ★ DENTAL ASSISTANT ';
+  x.font = `800 15px ${F}`; x.fillStyle = '#fff'; x.textAlign = 'center'; x.textBaseline = 'middle';
+  const step = Math.PI * 2 / rt.length;
+  for (let i = 0; i < rt.length; i++) {
+    const a = -Math.PI / 2 + i * step;
+    x.save(); x.translate(sx + Math.cos(a) * (R - 32), sy + Math.sin(a) * (R - 32)); x.rotate(a + Math.PI / 2); x.fillText(rt[i], 0, 0); x.restore();
+  }
+  txt('DA', sx, sy + 8, `800 38px ${F}`, '#fff');
+  txt('ACADEMY', sx, sy + 30, `800 13px ${F}`, '#fff', 'center', '2px');
+  x.restore();
+
+  /* น้องเดนต้า + คำพูด */
+  if (denta) {
+    const dh = 250, dw = denta.width / denta.height * dh, dx = W - 130 - dw, dy = 104;
+    x.drawImage(denta, dx, dy, dw, dh);
+    const bw = 230, bh = 74, bx = dx - bw - 6, by = dy + 46;
+    rr(bx, by, bw, bh, 30); x.fillStyle = '#fff'; x.fill(); x.lineWidth = 4; x.strokeStyle = INK; x.stroke();
+    x.beginPath(); x.moveTo(bx + bw - 2, by + bh - 34); x.lineTo(bx + bw + 24, by + bh - 14); x.lineTo(bx + bw - 2, by + bh - 16); x.fillStyle = '#fff'; x.fill();
+    x.beginPath(); x.moveTo(bx + bw, by + bh - 34); x.lineTo(bx + bw + 24, by + bh - 14); x.lineTo(bx + bw, by + bh - 16); x.lineWidth = 4; x.strokeStyle = INK; x.stroke();
+    txt('ยินดีด้วย!', bx + bw / 2, by + 50, `800 34px ${F}`, RED);
+  }
+
+  /* ท้ายใบ */
+  txt(`เลขที่ ${ci.no}`, W - 116, H - 104, `600 22px ${F}`, '#8a86a2', 'right');
+  txt('DA Training Academy · Smile Gallery Dental Clinic', 116, H - 104, `600 22px ${F}`, '#8a86a2', 'left');
+
+  /* ลายน้ำเมื่อยังไม่ครบเกณฑ์ */
+  if (!ci.ok) {
+    x.save(); x.translate(cx, H / 2 + 20); x.rotate(-.32);
+    x.font = `800 250px ${F}`; x.textAlign = 'center'; x.textBaseline = 'middle';
+    x.fillStyle = 'rgba(224,35,46,.10)'; x.fillText('ตัวอย่าง', 0, 0);
+    x.lineWidth = 3; x.strokeStyle = 'rgba(224,35,46,.28)'; x.strokeText('ตัวอย่าง', 0, 0);
+    x.restore();
+  }
+}
+DA.acts['cert-dl'] = el => {
+  const cv = $('#cert'); if (!cv || el.disabled) return;
+  const ci = certInfo();
+  const nm = (ci.name || 'ตัวอย่าง').replace(/[\\/:*?"<>|\u0000-\u001f]+/g, '').trim().slice(0, 80) || 'ตัวอย่าง';
+  const filename = `ใบประกาศ DA Academy - ${nm}.png`;
+  cv.toBlob(async blob => {
+    if (!blob) { toast('สร้างไฟล์ไม่สำเร็จ'); return; }
+    if (S.downloads) {
+      try { await S.downloads.save({ filename, data: blob }); toast('บันทึกใบประกาศแล้ว'); }
+      catch (e) { const c = errCode(e); if (c !== 'declined') toast('ดาวน์โหลดไม่สำเร็จ (' + c + ')'); }
+      return;
+    }
+    const url = URL.createObjectURL(blob), a = document.createElement('a');
+    a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+  }, 'image/png');
+};
+
 function summaryText() {
   const p = S.prog.profile;
   const lines = ['สรุปผลการเรียน · Smile Gallery DA Academy', `ชื่อ: ${p.name || '-'}${p.nickname ? ' (' + p.nickname + ')' : ''} · สาขา: ${p.branch || '-'}`, ''];

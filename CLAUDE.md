@@ -9,13 +9,13 @@ This is an interactive Thai training course for new dental assistants (ผู้
 
 ## The published Artifact
 
-- **URL:** https://claude.ai/artifact/MT3cMZMaxNKW7H5c5jM7dA (private; owner rooneysakan@gmail.com). Version 4 holds all 10 modules and the DENTA mascot.
+- **URL:** https://claude.ai/artifact/MT3cMZMaxNKW7H5c5jM7dA (owner rooneysakan@gmail.com; shared as "Anyone with the link" as of version 5). Version 4 holds all 10 modules and the DENTA mascot. Version 5 adds the certificate, DENTA reactions and the results banner. Version 6 adds the daily refresher (`daily.js`).
 - **Before you publish from a new machine or conversation**, first call `Artifact action:"read"` with that URL, then publish with `url` set to it. Otherwise you create a new artifact or the publish is refused.
 - **Publish call:**
   ```
   file_path: <repo>/index.html
   url: https://claude.ai/artifact/MT3cMZMaxNKW7H5c5jM7dA
-  files: {"course.js":"course.js","app.js":"app.js","engines.js":"engines.js","hr.js":"hr.js"}
+  files: {"course.js":"course.js","app.js":"app.js","engines.js":"engines.js","hr.js":"hr.js","daily.js":"daily.js"}
   ```
   - The `img/*` files are already published. Add them to `files` only when an image is added or changed.
   - Omit `icon` and `capabilities` so the stored declaration carries forward. Passing a non-empty `capabilities` object replaces the whole set.
@@ -42,11 +42,12 @@ A custom login (employee code or LINE) would need a backend. It has not been bui
 
 | File | What it holds |
 |---|---|
-| `index.html` | `<title>`, the `<style>` (all CSS and theme tokens), and the markup shell. There is **no** doctype, html, head or body; the Artifact tool adds them at publish time. Scripts load in this order: course.js → app.js → engines.js → hr.js, then `DA.boot()`. |
+| `index.html` | `<title>`, the `<style>` (all CSS and theme tokens), and the markup shell. There is **no** doctype, html, head or body; the Artifact tool adds them at publish time. Scripts load in this order: course.js → app.js → engines.js → hr.js → daily.js, then `DA.boot()`. |
 | `course.js` | `window.COURSE`, which holds all course content. The header comment documents the block types. Edit content here. |
-| `app.js` | Router, home page, module and lesson pages, storyboard "video" player (`SB_ART` regex picks the illustration for each shot), tests, progress, db and user connection, and the certificate. |
+| `app.js` | Router, home page, module and lesson pages, storyboard "video" player (`SB_ART` regex picks the illustration for each shot), tests, progress, db and user connection, and the certificate. The certificate route is `{name:'cert'}`: `renderCert` and `drawCert` draw a 1754×1240 canvas, and `DA.acts['cert-dl']` saves it as a PNG through `downloads`. The name comes from the profile. Until every module's post-test is passed it shows a "ตัวอย่าง" watermark. `rDenta(say)` puts the DENTA reaction on the result cards. |
 | `engines.js` | Practice engines: scenario, spot, match, sequence, tray, clock, tooth. |
 | `hr.js` | HR dashboard: everyone's scores, sign-offs and CSV export. It falls back to sample data. |
+| `daily.js` | Daily refresher (route `{name:'daily'}`, nav "ทบทวนรายวัน"): 5 questions a day by spaced repetition, plus a streak. See "Daily refresher" below. It exports `DA.daily`; app.js calls it only through `if (DA.daily)` guards, so the course still works without the file. |
 | `img/` | Instrument and tray photos, `logo-smile-gallery.png`, and `denta.png`. `denta.png` is the clinic mascot น้องเดนต้า, used on the home hero and in the video intro/outro (`MASCOT` in app.js). It was cut from a 1028×257 banner, so it is only about 179×256 px; swap in a larger PNG with a transparent background if the clinic has one. |
 | `scripts/preview.py` | Local preview server; see "Testing" below. |
 
@@ -78,6 +79,27 @@ A custom login (employee code or LINE) would need a backend. It has not been bui
 
 The totals are 40 lessons, 34 practices and 95 test questions.
 
+## Daily refresher (`daily.js`)
+
+- **Pool:** 129 questions, built at load time from every draft module's `test` (95) and lesson `check` blocks (34). Question ids are `<moduleId>_<hash of q + img>`, so editing a question's text gives it a new id and a fresh schedule. Two m04 image questions share the same text, which is why the image is part of the key.
+- **Schedule (Leitner boxes, `IV=[0,1,2,4,7,14]` days per box):**
+  - A first correct answer puts a question in box 2, due in 2 days.
+  - A correct answer on or after the due day moves it up one box, to a maximum of box 5 (14 days). Answering before the due day does not move it.
+  - A wrong answer puts it back in box 1, due tomorrow.
+  - Box 3 or higher (4 days or more) counts as "จำแม่น".
+- **Each day's set (5 questions):**
+  - due questions first, lowest box first
+  - then new questions, taken in turn from the modules the learner has started (from all modules if none is started, or in presenter mode)
+  - then early review of the questions closest to due
+  - After the set, "ทบทวนเพิ่มอีก 5 ข้อ" deals a bonus round that does not repeat the main set.
+- **Seeding:** every module post-test calls `DA.daily.seed(m, log)`. Correct answers are graded as above. Wrong answers are due today, and if today's set hasn't started it is rebuilt to include them.
+- **Storage:** `progress/{userId}.review`, in the same document as the rest of progress, merged by `cleanProg`/`mergeProg` in app.js:
+  ```js
+  review = { q:{id:{b,due,n,w,at}}, streak:{n,best,last}, today:{d,ids,res,round,done}, hist:[{d,r,n,ok}] }
+  ```
+  Opening the page never writes anything. The first write happens on the first answer. `merge` joins streak runs from two devices.
+- Home has a "ทบทวนรายวันกับน้องเดนต้า" button, the results page has a streak strip, and the nav shows a red dot until today's set is done.
+
 ## Content rules
 
 - `source:"clinic"` means the content comes from the clinic's own documents. `"standard"` means it is compiled from standard sources such as WHO, CDC and ทันตแพทยสภา.
@@ -92,7 +114,8 @@ python scripts/preview.py
 
 This builds `.preview/` and serves http://127.0.0.1:8765. In Claude Code, `preview_start {name:"da-preview"}` does the same thing through `.claude/launch.json`. Restart it after edits.
 
-- Use `DA.go({name:'mod', id:'m06', step:'L:l1'|'P:p1'|'pre'|'post'|'check', peek:true})` to jump straight to a step.
+- Use `DA.go({name:'mod', id:'m06', step:'L:l1'|'P:p1'|'pre'|'post'|'check', peek:true})` to jump straight to a step. `DA.go({name:'daily'})` opens the daily refresher.
+- The browser caches the scripts. After a restart, run `await Promise.all(['app.js','daily.js','course.js','engines.js','hr.js'].map(f=>fetch('/'+f,{cache:'reload'})))` and then reload.
 - Before publishing, check these:
   - there are no console errors
   - every lesson renders and has video shots and a check
