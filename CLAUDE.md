@@ -9,7 +9,7 @@ This is an interactive Thai training course for new dental assistants (ผู้
 
 ## The published Artifact
 
-- **URL:** https://claude.ai/artifact/MT3cMZMaxNKW7H5c5jM7dA (private; owner rooneysakan@gmail.com). Version 3 holds all 10 modules.
+- **URL:** https://claude.ai/artifact/MT3cMZMaxNKW7H5c5jM7dA (private; owner rooneysakan@gmail.com). Version 4 holds all 10 modules and the DENTA mascot.
 - **Before you publish from a new machine or conversation**, first call `Artifact action:"read"` with that URL, then publish with `url` set to it. Otherwise you create a new artifact or the publish is refused.
 - **Publish call:**
   ```
@@ -47,7 +47,7 @@ A custom login (employee code or LINE) would need a backend. It has not been bui
 | `app.js` | Router, home page, module and lesson pages, storyboard "video" player (`SB_ART` regex picks the illustration for each shot), tests, progress, db and user connection, and the certificate. |
 | `engines.js` | Practice engines: scenario, spot, match, sequence, tray, clock, tooth. |
 | `hr.js` | HR dashboard: everyone's scores, sign-offs and CSV export. It falls back to sample data. |
-| `img/` | Instrument and tray photos, and `logo-smile-gallery.png`. |
+| `img/` | Instrument and tray photos, `logo-smile-gallery.png`, and `denta.png`. `denta.png` is the clinic mascot น้องเดนต้า, used on the home hero and in the video intro/outro (`MASCOT` in app.js). It was cut from a 1028×257 banner, so it is only about 179×256 px; swap in a larger PNG with a transparent background if the clinic has one. |
 | `scripts/preview.py` | Local preview server; see "Testing" below. |
 
 ## Module schema (`COURSE.modules[]`)

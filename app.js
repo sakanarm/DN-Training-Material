@@ -370,17 +370,8 @@ DA.fmtDate = fmtDate;
 
 /* ── โครงหน้าเว็บ ── */
 const LOGO = `<svg viewBox="0 0 24 24" fill="#fff" aria-hidden="true"><path d="M7 3C4.5 3 3 5 3 7.5c0 3 1.5 4.5 2 7 .5 3 1 6.5 2.5 6.5S9.5 17 10 15c.4-1.4 1.1-2 2-2s1.6.6 2 2c.5 2 1 6 2.5 6s2-3.5 2.5-6.5c.5-2.5 2-4 2-7C21 5 19.5 3 17 3c-2 0-3 1-5 1S9 3 7 3z"/><circle cx="16.5" cy="7.5" r="1.6" fill="#E0232E"/></svg>`;
-/* น้องฟันยิ้ม: มาสคอตของหลักสูตร (วาดเอง) + เมฆ/ประกายตกแต่ง */
-const MASCOT = `<svg class="mascot" viewBox="0 0 130 132" aria-hidden="true">
-  <ellipse class="arm" cx="27" cy="80" rx="7" ry="12" transform="rotate(-28 27 80)"/>
-  <g class="wave"><ellipse class="arm" cx="106" cy="54" rx="7" ry="13" transform="rotate(32 106 54)"/></g>
-  <path class="body" d="M30 34C30 16 46 10 65 16C84 10 100 16 100 34C100 56 92 64 90 82C88 102 84 126 74 126C66 126 66 104 65 98C64 104 64 126 56 126C46 126 42 102 40 82C38 64 30 56 30 34Z"/>
-  <path class="cap" d="M47 19L83 19L79 6Q65 1 51 6Z"/><rect class="cross" x="63" y="7" width="4" height="9" rx="1"/><rect class="cross" x="60.5" y="9.5" width="9" height="4" rx="1"/>
-  <ellipse class="ink" cx="52" cy="52" rx="5" ry="7"/><ellipse class="ink" cx="78" cy="52" rx="5" ry="7"/>
-  <circle class="hi" cx="54" cy="49" r="2"/><circle class="hi" cx="80" cy="49" r="2"/>
-  <ellipse class="blush" cx="43" cy="66" rx="7" ry="4"/><ellipse class="blush" cx="87" cy="66" rx="7" ry="4"/>
-  <path class="mouth" d="M57 65Q65 79 73 65Z"/><path class="tongue" d="M61 70Q65 76 69 70Q65 68 61 70Z"/>
-</svg>`;
+/* น้องเดนต้า (DENTA): มาสคอตของ Smile Gallery + เมฆ/ประกายตกแต่ง */
+const MASCOT = `<img class="mascot denta" src="img/denta.png" alt="" width="179" height="256" aria-hidden="true">`;
 const cloud = (cls, style) => `<svg class="cloud ${cls || ''}" style="${style}" viewBox="0 0 200 100" aria-hidden="true"><path d="M38 86C14 86 12 60 34 56C30 34 60 24 76 40C84 18 120 16 128 42C150 30 176 46 168 64C186 68 184 90 162 86Z"/></svg>`;
 const twinkle = style => `<svg class="twinkle" style="${style}" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z"/></svg>`;
 DA.MASCOT = MASCOT; DA.cloud = cloud;
@@ -523,7 +514,7 @@ function homeHTML() {
       <p class="hint">${ic('present')} เปิด “โหมดนำเสนอ” มุมขวาบน เพื่อเปิดดูทุกบทได้ทันทีโดยไม่ต้องทำตามลำดับ</p>
     </div>
     <div class="hero-art fade-in">
-    <div class="mascot-row"><div class="bob">${MASCOT}</div><div class="bubble">สวัสดี! น้องฟันยิ้มเอง<br>จะพาเรียนทีละขั้นนะ</div></div>
+    <div class="mascot-row"><div class="bob">${MASCOT}</div><div class="bubble">สวัสดี! น้องเดนต้าเอง<br>จะพาเรียนทีละขั้นนะ</div></div>
     <div class="pcard">
       <div class="pcard-top">
         ${ring(overall, { size: 104, sw: 10, col: 'var(--accent)', label: 'ทั้งหลักสูตร' })}
@@ -812,7 +803,7 @@ function sbScenes(m, l) {
   return sc;
 }
 function sbArt(s, i, m, l, n) {
-  const pop = MASCOT.replace('class="mascot"', 'class="mascot sb-pop"');
+  const pop = MASCOT.replace('class="mascot ', 'class="mascot sb-pop ');
   if (s.k === 'intro') return `${pop}<div class="sb-title sb-pop"><small>วิดีโอสาธิต · ${n} ฉาก</small><b>${esc(l.title)}</b><span>${esc(m.title)}</span></div>`;
   if (s.k === 'keys') return `<div class="sb-list sb-pop">${s.items.map(x => `<div><i>${ic('check')}</i><span>${esc(cut(x, 72))}</span></div>`).join('')}</div>`;
   if (s.k === 'outro') return `${pop}<div class="sb-title sb-pop"><small>จบวิดีโอ</small><b>ถึงตาคุณแล้ว!</b><span>${l.blocks.some(b => b.t === 'check') ? 'มีคำถามรอให้ลองตอบด้านล่าง' : 'อ่านสรุปด้านล่างได้เลย'}</span></div>`;
