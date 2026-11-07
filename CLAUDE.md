@@ -9,13 +9,13 @@ This is an interactive Thai training course for new dental assistants (ผู้
 
 ## The published Artifact
 
-- **URL:** https://claude.ai/artifact/MT3cMZMaxNKW7H5c5jM7dA (owner rooneysakan@gmail.com; shared as "Anyone with the link" as of version 5). Version 4 holds all 10 modules and the DENTA mascot. Version 5 adds the certificate, DENTA reactions and the results banner. Version 6 adds the daily refresher (`daily.js`).
+- **URL:** https://claude.ai/artifact/MT3cMZMaxNKW7H5c5jM7dA (owner rooneysakan@gmail.com; shared as "Anyone with the link" as of version 5). Version 4 holds all 10 modules and the DENTA mascot. Version 5 adds the certificate, DENTA reactions and the results banner. Version 6 adds the daily refresher (`daily.js`). Version 7 adds the skills map (`skills.js`).
 - **Before you publish from a new machine or conversation**, first call `Artifact action:"read"` with that URL, then publish with `url` set to it. Otherwise you create a new artifact or the publish is refused.
 - **Publish call:**
   ```
   file_path: <repo>/index.html
   url: https://claude.ai/artifact/MT3cMZMaxNKW7H5c5jM7dA
-  files: {"course.js":"course.js","app.js":"app.js","engines.js":"engines.js","hr.js":"hr.js","daily.js":"daily.js"}
+  files: {"course.js":"course.js","app.js":"app.js","engines.js":"engines.js","hr.js":"hr.js","skills.js":"skills.js","daily.js":"daily.js"}
   ```
   - The `img/*` files are already published. Add them to `files` only when an image is added or changed.
   - Omit `icon` and `capabilities` so the stored declaration carries forward. Passing a non-empty `capabilities` object replaces the whole set.
@@ -42,11 +42,12 @@ A custom login (employee code or LINE) would need a backend. It has not been bui
 
 | File | What it holds |
 |---|---|
-| `index.html` | `<title>`, the `<style>` (all CSS and theme tokens), and the markup shell. There is **no** doctype, html, head or body; the Artifact tool adds them at publish time. Scripts load in this order: course.js → app.js → engines.js → hr.js → daily.js, then `DA.boot()`. |
+| `index.html` | `<title>`, the `<style>` (all CSS and theme tokens), and the markup shell. There is **no** doctype, html, head or body; the Artifact tool adds them at publish time. Scripts load in this order: course.js → app.js → engines.js → hr.js → skills.js → daily.js, then `DA.boot()`. |
 | `course.js` | `window.COURSE`, which holds all course content. The header comment documents the block types. Edit content here. |
 | `app.js` | Router, home page, module and lesson pages, storyboard "video" player (`SB_ART` regex picks the illustration for each shot), tests, progress, db and user connection, and the certificate. The certificate route is `{name:'cert'}`: `renderCert` and `drawCert` draw a 1754×1240 canvas, and `DA.acts['cert-dl']` saves it as a PNG through `downloads`. The name comes from the profile. Until every module's post-test is passed it shows a "ตัวอย่าง" watermark. `rDenta(say)` puts the DENTA reaction on the result cards. |
 | `engines.js` | Practice engines: scenario, spot, match, sequence, tray, clock, tooth. |
-| `hr.js` | HR dashboard: everyone's scores, sign-offs and CSV export. It falls back to sample data. |
+| `hr.js` | HR page: everyone's scores, sign-offs and CSV export. It falls back to sample data. The route is `{name:'hr'}` with `view:'dash'` (default) or `view:'map'`, and the header tabs (`data-act="hr-view"`) switch between the score overview and the skills map. It exports `DA.hr.api` (`filtered`, `rowsOf`, `branchOf`, `nameOf`, `ST`, `wireTips`, `redraw`, `setBranch` and more) for skills.js. |
+| `skills.js` | Skills map: see "Skills map" below. It exports `DA.skills`; hr.js and app.js call it only through `if (DA.skills)` guards. |
 | `daily.js` | Daily refresher (route `{name:'daily'}`, nav "ทบทวนรายวัน"): 5 questions a day by spaced repetition, plus a streak. See "Daily refresher" below. It exports `DA.daily`; app.js calls it only through `if (DA.daily)` guards, so the course still works without the file. |
 | `img/` | Instrument and tray photos, `logo-smile-gallery.png`, and `denta.png`. `denta.png` is the clinic mascot น้องเดนต้า, used on the home hero and in the video intro/outro (`MASCOT` in app.js). It was cut from a 1028×257 banner, so it is only about 179×256 px; swap in a larger PNG with a transparent background if the clinic has one. |
 | `scripts/preview.py` | Local preview server; see "Testing" below. |
@@ -100,6 +101,31 @@ The totals are 40 lessons, 34 practices and 95 test questions.
   Opening the page never writes anything. The first write happens on the first answer. `merge` joins streak runs from two devices.
 - Home has a "ทบทวนรายวันกับน้องเดนต้า" button, the results page has a streak strip, and the nav shows a red dot until today's set is done.
 
+## Skills map (`skills.js`)
+
+- **Where it appears:**
+  - It is the "แผนที่ทักษะ" tab on the HR page (`DA.go({name:'hr', view:'map'})`).
+  - The home page shows a teaser section for managers ("เห็นทักษะของทีมทั้งคลินิก ในหน้าเดียว"), with a mini heatmap built from sample data and a button (`sk-open`) that opens the map.
+- **Cell status** comes from `modStatus` in app.js:
+  - `done` ผ่านสมบูรณ์: the post-test is passed and every checklist item is signed off.
+  - `wait` รอประเมินหน้างาน: the post-test is passed, but sign-offs are incomplete.
+  - `prog` กำลังเรียน: the cell shows the % progress.
+  - `none` ยังไม่เริ่ม.
+- **รายคน (people) view:**
+  - It is a learners × 10 modules table, grouped by branch, with a sticky name column.
+  - The legend buttons (`sk-focus`) highlight one status.
+  - A cell or a name opens the person page, whose back button returns to the map.
+  - The footer row shows the % "ผ่านสมบูรณ์" per module.
+- **รายสาขา (branch) view:** a branches × modules heatmap of % ผ่านสมบูรณ์, with a 5-step navy ramp (`--sk-h0`…`--sk-h4`). Clicking a branch (`sk-branch`) filters to that branch in people view.
+- **Three insight cards on top:**
+  - the readiest module
+  - the module to push
+  - pending on-site sign-offs, with "ไฮไลต์ในตาราง"
+- **CSS gotchas:**
+  - `.sk th,.sk td{background:none}` outranks single-class rules, so status fills use `.skc.k-*`.
+  - `.mt` is already taken by the match engine, so module header titles use `.sk-mt`.
+  - `.sk-scroll` must stay `position:relative`. Otherwise the absolutely positioned `.sr` text in each cell escapes the scroll box and widens the page at 375px.
+
 ## Content rules
 
 - `source:"clinic"` means the content comes from the clinic's own documents. `"standard"` means it is compiled from standard sources such as WHO, CDC and ทันตแพทยสภา.
@@ -114,8 +140,8 @@ python scripts/preview.py
 
 This builds `.preview/` and serves http://127.0.0.1:8765. In Claude Code, `preview_start {name:"da-preview"}` does the same thing through `.claude/launch.json`. Restart it after edits.
 
-- Use `DA.go({name:'mod', id:'m06', step:'L:l1'|'P:p1'|'pre'|'post'|'check', peek:true})` to jump straight to a step. `DA.go({name:'daily'})` opens the daily refresher.
-- The browser caches the scripts. After a restart, run `await Promise.all(['app.js','daily.js','course.js','engines.js','hr.js'].map(f=>fetch('/'+f,{cache:'reload'})))` and then reload.
+- Use `DA.go({name:'mod', id:'m06', step:'L:l1'|'P:p1'|'pre'|'post'|'check', peek:true})` to jump straight to a step. `DA.go({name:'daily'})` opens the daily refresher, and `DA.go({name:'hr', view:'map'})` opens the skills map.
+- The browser caches the scripts. After a restart, run `await Promise.all(['app.js','daily.js','course.js','engines.js','hr.js','skills.js'].map(f=>fetch('/'+f,{cache:'reload'})))` and then reload.
 - Before publishing, check these:
   - there are no console errors
   - every lesson renders and has video shots and a check

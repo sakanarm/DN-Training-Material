@@ -568,7 +568,8 @@ function homeHTML() {
   <section class="section"><div class="wrap">
     <div class="sec-head"><div><div class="eyebrow">หลักสูตร</div><h2>${C.modules.length} บทเรียน ใน 3 ระดับ</h2><p>เนื้อหาเรียบเรียงจากเอกสารปฐมนิเทศของคลินิกและแนวทางมาตรฐานสากล ${C.modules.length > DRAFT.length ? 'บทที่ยังวางโครงจะเติมเนื้อหาในระยะถัดไป' : 'ทุกบทพร้อมให้ทดลองเรียน และรอทันตแพทย์ตรวจทานก่อนใช้จริง'}</p></div></div>
     ${levels}
-  </div></section>`;
+  </div></section>
+  ${DA.skills ? DA.skills.homeTeaser() : ''}`;
 }
 function modCard(m) {
   const no = modNo(m);

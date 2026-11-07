@@ -8,7 +8,7 @@ const clone = x => JSON.parse(JSON.stringify(x));
 const avg = a => (a.length ? Math.round(a.reduce((x, y) => x + y, 0) / a.length) : null);
 
 const H = {
-  src: null, branch: '', q: '',
+  src: null, branch: '', q: '', view: 'dash',
   sample: null, sampleSo: {},
   real: { prog: {}, so: {}, soServer: {}, state: 'idle', err: '' },
   subbed: false, queue: {}, pend: {}, cd: null, ro: null
@@ -161,11 +161,33 @@ function rel(t) {
 const sgn = v => (v > 0 ? '+' : '') + v;
 
 /* ── หน้าภาพรวม ── */
+const mapOn = () => H.view === 'map' && !!DA.skills;
+function headHTML() {
+  const map = mapOn();
+  return `<div><div class="eyebrow">สำหรับหัวหน้าและ HR</div><h2>${map ? 'แผนที่ทักษะทั้งคลินิก' : 'ภาพรวมผลการฝึกอบรม'}</h2>
+      <p>${map ? 'เห็นสถานะของพนักงานทุกคนในทุกบท แยกตามสาขา ในหน้าเดียว รู้ทันทีว่าทีมพร้อมงานไหนและต้องเร่งเรื่องใด' : 'ติดตามคะแนนก่อนและหลังเรียน ความคืบหน้ารายบุคคล และบทที่รอหัวหน้าประเมินหน้างาน'}</p></div>
+    ${DA.skills ? `<span class="hr-tabs" role="group" aria-label="มุมมองหน้า HR">
+      <button data-act="hr-view" data-v="dash" aria-pressed="${!map}">${ic('chart')}ภาพรวมคะแนน</button>
+      <button data-act="hr-view" data-v="map" aria-pressed="${map}">${ic('target')}แผนที่ทักษะ</button></span>` : ''}`;
+}
+function setView(v) {
+  H.view = v === 'map' ? 'map' : 'dash';
+  if (S.route.name !== 'hr' || !$('#hr-body')) { DA.go({ name: 'hr', view: H.view }); return; }
+  S.route = { name: 'hr', view: H.view };
+  $('#hr-head').innerHTML = headHTML();
+  renderBody();
+  const b = $(`#hr-head [data-act="hr-view"][data-v="${H.view}"]`); if (b) b.focus();
+}
+function setBranch(b) {
+  H.branch = b || '';
+  const sel = $('#hr-branch'); if (sel) sel.value = H.branch;
+  renderBody();
+}
 function render(main) {
   ensureSub();
+  H.view = S.route.view === 'map' ? 'map' : 'dash';
   main.innerHTML = `<section class="section-tight"><div class="wrap fade-in">
-    <div class="sec-head"><div><div class="eyebrow">สำหรับหัวหน้าและ HR</div><h2>ภาพรวมผลการฝึกอบรม</h2>
-      <p>ติดตามคะแนนก่อนและหลังเรียน ความคืบหน้ารายบุคคล และบทที่รอหัวหน้าประเมินหน้างาน</p></div></div>
+    <div class="sec-head" id="hr-head">${headHTML()}</div>
     <div id="hr-src"></div>
     <div class="hr-bar">
       <span id="hr-seg"></span>
@@ -216,6 +238,7 @@ function renderBody() {
     body.innerHTML = `<div class="note">${ic('users')}<div>${none ? 'ยังไม่มีผู้เรียนส่งคะแนนเข้าระบบ เมื่อพนักงานเริ่มเรียนผ่านลิงก์นี้ คะแนนจะแสดงที่นี่อัตโนมัติ' : 'ไม่พบผู้เรียนตามเงื่อนไขที่เลือก'}</div></div>`;
     H.cd = null; return;
   }
+  if (mapOn()) { H.cd = null; DA.skills.draw(body, list); return; }
   const n = list.length;
   const done = list.filter(r => r.s.st === 'done').length;
   const posts = list.flatMap(r => r.s.posts), gains = list.flatMap(r => r.s.gains);
@@ -411,7 +434,7 @@ const evaluator = () => { const v = DA.lsGet(EVAL_KEY); return typeof v === 'str
 function renderPerson(main, id) {
   ensureSub();
   const r = personRow();
-  const back = `<button class="btn btn-text btn-sm" data-act="go" data-r="hr" style="margin:-8px 0 10px -10px">${ic('arrowL')}กลับไปภาพรวม HR</button>`;
+  const back = `<button class="btn btn-text btn-sm" data-act="hr-view" data-v="${mapOn() ? 'map' : 'dash'}" style="margin:-8px 0 10px -10px">${ic('arrowL')}${mapOn() ? 'กลับไปแผนที่ทักษะ' : 'กลับไปภาพรวม HR'}</button>`;
   if (!r) {
     const loading = S.route.src === 'real' && H.real.state !== 'ready' && H.real.state !== 'error';
     main.innerHTML = `<section class="section-tight"><div class="wrap">${back}<div class="note${loading ? '' : ' warn'}">${ic(loading ? 'cloud' : 'info')}<div>${loading ? 'กำลังโหลดข้อมูลผู้เรียน…' : 'ไม่พบข้อมูลผู้เรียนคนนี้'}</div></div></div></section>`;
@@ -502,7 +525,9 @@ function queueWrite(uid) {
 
 /* ── ลงทะเบียน ── */
 DA.hr = { render, renderPerson };
+DA.hr.api = { filtered, rowsOf, src, stats, branchOf, nameOf, ST, ST_ORDER, rel, wireTips, redraw: () => renderBody(), setBranch };
 Object.assign(DA.acts, {
+  'hr-view': el => setView(el.dataset.v),
   'hr-src': el => { H.src = el.dataset.v === 'real' ? 'real' : 'sample'; H.branch = ''; refreshDash(); },
   'hr-person': el => DA.go({ name: 'person', id: el.dataset.id, src: src() }),
   'hr-csv': () => { exportCsv(); },
