@@ -116,7 +116,9 @@ function onData() {
 
 /* ── คำนวณ ── */
 function rowsOf(k) {
-  if (k === 'real') return Object.keys(H.real.prog).map(id => ({ id, prog: H.real.prog[id], so: H.real.so[id] || null }));
+  /* เวอร์ชันเว็บ: ใช้ชื่อและสาขาล่าสุดจากทะเบียนผู้ใช้ (HR แก้ได้) แทนที่ผู้เรียนบันทึกไว้ */
+  const ov = DA.platform && DA.platform.overlay;
+  if (k === 'real') return Object.keys(H.real.prog).map(id => ({ id, prog: ov ? ov(id, H.real.prog[id]) : H.real.prog[id], so: H.real.so[id] || null })).filter(r => r.prog);
   if (!H.sample) buildSample();
   return H.sample.map(x => ({ id: x.id, prog: x.prog, so: H.sampleSo[x.id] || null }));
 }
@@ -162,17 +164,26 @@ const sgn = v => (v > 0 ? '+' : '') + v;
 
 /* ── หน้าภาพรวม ── */
 const mapOn = () => H.view === 'map' && !!DA.skills;
+/* แท็บ "จัดการผู้ใช้" มีเฉพาะเวอร์ชันเว็บ (web/auth.js ตั้ง DA.auth) */
+const usersOn = () => !!(DA.auth && DA.auth.renderUsers);
+const HEAD_T = {
+  dash: ['ภาพรวมผลการฝึกอบรม', 'ติดตามคะแนนก่อนและหลังเรียน ความคืบหน้ารายบุคคล และบทที่รอหัวหน้าประเมินหน้างาน'],
+  map: ['แผนที่ทักษะทั้งคลินิก', 'เห็นสถานะของพนักงานทุกคนในทุกบท แยกตามสาขา ในหน้าเดียว รู้ทันทีว่าทีมพร้อมงานไหนและต้องเร่งเรื่องใด'],
+  users: ['จัดการผู้ใช้', 'อนุมัติพนักงานที่ลงทะเบียนใหม่ แก้ไขข้อมูล กำหนดสิทธิ์ และปิดการใช้งานบัญชีของคนที่ลาออก']
+};
 function headHTML() {
-  const map = mapOn();
-  return `<div><div class="eyebrow">สำหรับหัวหน้าและ HR</div><h2>${map ? 'แผนที่ทักษะทั้งคลินิก' : 'ภาพรวมผลการฝึกอบรม'}</h2>
-      <p>${map ? 'เห็นสถานะของพนักงานทุกคนในทุกบท แยกตามสาขา ในหน้าเดียว รู้ทันทีว่าทีมพร้อมงานไหนและต้องเร่งเรื่องใด' : 'ติดตามคะแนนก่อนและหลังเรียน ความคืบหน้ารายบุคคล และบทที่รอหัวหน้าประเมินหน้างาน'}</p></div>
-    ${DA.skills ? `<span class="hr-tabs" role="group" aria-label="มุมมองหน้า HR">
-      <button data-act="hr-view" data-v="dash" aria-pressed="${!map}">${ic('chart')}ภาพรวมคะแนน</button>
-      <button data-act="hr-view" data-v="map" aria-pressed="${map}">${ic('target')}แผนที่ทักษะ</button></span>` : ''}`;
+  const v = H.view === 'users' ? 'users' : mapOn() ? 'map' : 'dash', [t, p] = HEAD_T[v];
+  const nPend = usersOn() && DA.auth.pendingCount ? DA.auth.pendingCount() : 0;
+  return `<div><div class="eyebrow">สำหรับหัวหน้าและ HR</div><h2>${t}</h2><p>${p}</p></div>
+    ${DA.skills || usersOn() ? `<span class="hr-tabs" role="group" aria-label="มุมมองหน้า HR">
+      <button data-act="hr-view" data-v="dash" aria-pressed="${v === 'dash'}">${ic('chart')}ภาพรวมคะแนน</button>
+      ${DA.skills ? `<button data-act="hr-view" data-v="map" aria-pressed="${v === 'map'}">${ic('target')}แผนที่ทักษะ</button>` : ''}
+      ${usersOn() ? `<button data-act="hr-view" data-v="users" aria-pressed="${v === 'users'}">${ic('users')}จัดการผู้ใช้${nPend ? `<span class="hr-badge" aria-label="รออนุมัติ ${nPend} คน">${nPend}</span>` : ''}</button>` : ''}</span>` : ''}`;
 }
 function setView(v) {
-  H.view = v === 'map' ? 'map' : 'dash';
-  if (S.route.name !== 'hr' || !$('#hr-body')) { DA.go({ name: 'hr', view: H.view }); return; }
+  const was = H.view;
+  H.view = v === 'map' ? 'map' : v === 'users' && usersOn() ? 'users' : 'dash';
+  if (S.route.name !== 'hr' || !$('#hr-body') || was === 'users' || H.view === 'users') { DA.go({ name: 'hr', view: H.view }); return; }
   S.route = { name: 'hr', view: H.view };
   $('#hr-head').innerHTML = headHTML();
   renderBody();
@@ -184,6 +195,15 @@ function setBranch(b) {
   renderBody();
 }
 function render(main) {
+  if (S.route.view === 'users' && usersOn()) {
+    H.view = 'users';
+    main.innerHTML = `<section class="section-tight"><div class="wrap fade-in">
+      <div class="sec-head" id="hr-head">${headHTML()}</div>
+      <div id="hr-body"></div>
+    </div></section>`;
+    DA.auth.renderUsers($('#hr-body'));
+    return;
+  }
   ensureSub();
   H.view = S.route.view === 'map' ? 'map' : 'dash';
   main.innerHTML = `<section class="section-tight"><div class="wrap fade-in">
@@ -192,7 +212,7 @@ function render(main) {
     <div class="hr-bar">
       <span id="hr-seg"></span>
       <select id="hr-branch" aria-label="กรองตามสาขา"></select>
-      <input id="hr-q" type="search" placeholder="ค้นหาชื่อหรือชื่อเล่น" aria-label="ค้นหาผู้เรียน" value="${esc(H.q)}" maxlength="40">
+      <input id="hr-q" type="search" placeholder="${DA.platform ? 'ค้นหาชื่อ ชื่อเล่น หรือรหัสพนักงาน' : 'ค้นหาชื่อหรือชื่อเล่น'}" aria-label="ค้นหาผู้เรียน" value="${esc(H.q)}" maxlength="40">
       <span style="flex:1"></span>
       <button class="btn btn-ghost btn-sm" data-act="hr-csv">${ic('download')}ส่งออก CSV</button>
     </div>
@@ -228,7 +248,7 @@ function srcBanner(k, adm, nReal) {
 function filtered() {
   const q = H.q.trim().toLowerCase();
   return rowsOf(src()).filter(r => (!H.branch || branchOf(r) === H.branch)
-    && (!q || (r.prog.profile.name + ' ' + r.prog.profile.nickname).toLowerCase().includes(q)));
+    && (!q || [r.prog.profile.name, r.prog.profile.nickname, r.prog.profile.empCode].join(' ').toLowerCase().includes(q)));
 }
 function renderBody() {
   const body = $('#hr-body'); if (!body) return;
@@ -274,7 +294,7 @@ function renderBody() {
 function rowHTML(r) {
   const p = r.prog.profile, s = r.s, tot = DRAFT.length;
   return `<tr class="click" data-act="hr-person" data-id="${esc(r.id)}">
-    <td><button class="lnk" data-act="hr-person" data-id="${esc(r.id)}">${esc(nameOf(r))}</button>${p.nickname ? `<small class="muted" style="display:block;font-size:12.5px">${esc(p.nickname)}</small>` : ''}</td>
+    <td><button class="lnk" data-act="hr-person" data-id="${esc(r.id)}">${esc(nameOf(r))}</button>${p.nickname || p.empCode ? `<small class="muted" style="display:block;font-size:12.5px">${[p.empCode, p.nickname].filter(Boolean).map(esc).join(' · ')}</small>` : ''}</td>
     <td>${esc(branchOf(r))}</td>
     <td><div style="display:flex;align-items:center;gap:8px;min-width:120px"><div class="bar${s.passed === tot ? ' ok' : ''}" style="flex:1"><i style="width:${Math.round(s.passed / tot * 100)}%"></i></div><span class="muted" style="font-size:13px;font-variant-numeric:tabular-nums">${s.passed}/${tot}</span></div></td>
     <td class="num">${s.pre == null ? '–' : s.pre + '%'}</td>
@@ -395,13 +415,16 @@ const cell = v => { let s = v == null ? '' : String(v); if (/^[=+\-@\t\r]/.test(
 async function exportCsv() {
   const k = src(), list = filtered().map(r => Object.assign(r, { s: stats(r) }));
   if (!list.length) { toast('ไม่มีข้อมูลให้ส่งออก'); return; }
-  const head = ['ชื่อ', 'ชื่อเล่น', 'สาขา', 'วันที่เริ่มงาน', 'สถานะ', 'บทที่สอบผ่าน', 'เฉลี่ยก่อนเรียน (%)', 'เฉลี่ยหลังเรียน (%)'];
+  /* เวอร์ชันเว็บมีรหัสพนักงานจากทะเบียนผู้ใช้ จึงใส่เป็นคอลัมน์แรกไว้ใช้อ้างอิงกับระบบ HR (ใน Artifact ไม่มีคอลัมน์นี้) */
+  const emp = list.some(r => r.prog.profile.empCode);
+  const head = (emp ? ['รหัสพนักงาน'] : []).concat(['ชื่อ', 'ชื่อเล่น', 'สาขา', 'วันที่เริ่มงาน', 'สถานะ', 'บทที่สอบผ่าน', 'เฉลี่ยก่อนเรียน (%)', 'เฉลี่ยหลังเรียน (%)']);
   DRAFT.forEach(m => head.push(`บทที่ ${modNo(m)} ก่อนเรียน`, `บทที่ ${modNo(m)} หลังเรียน`, `บทที่ ${modNo(m)} สถานะ`));
   head.push('ใช้งานล่าสุด');
   const rows = [head];
   for (const r of list) {
     const p = r.prog.profile, s = r.s;
-    const row = [nameOf(r), p.nickname, branchOf(r), p.startDate, ST[s.st].label, `${s.passed}/${DRAFT.length}`, s.pre == null ? '' : s.pre, s.post == null ? '' : s.post];
+    const row = (emp ? [p.empCode || ''] : []).concat([nameOf(r), p.nickname, branchOf(r)]);
+    row.push(p.startDate, ST[s.st].label, `${s.passed}/${DRAFT.length}`, s.pre == null ? '' : s.pre, s.post == null ? '' : s.post);
     DRAFT.forEach(m => { const md = gm(m.id, r.prog), st = modStatus(m, r.prog, r.so); row.push(md.pre ? md.pre.score : '', md.post ? md.post.best : '', st.short || st.label); });
     row.push(s.last ? new Date(s.last).toLocaleString('th-TH') : '');
     rows.push(row);
@@ -425,7 +448,7 @@ async function exportCsv() {
 /* ── รายบุคคล ── */
 function personRow() {
   const r = S.route, k = r.src || src();
-  if (k === 'real') { const p = H.real.prog[r.id]; return p ? { id: r.id, prog: p, so: H.real.so[r.id] || null, k } : null; }
+  if (k === 'real') { const p = H.real.prog[r.id], ov = DA.platform && DA.platform.overlay; return p ? { id: r.id, prog: (ov && ov(r.id, p)) || p, so: H.real.so[r.id] || null, k } : null; }
   if (!H.sample) buildSample();
   const x = H.sample.find(s => s.id === r.id);
   return x ? { id: x.id, prog: x.prog, so: H.sampleSo[x.id] || null, k } : null;
@@ -465,7 +488,7 @@ function refreshPerson() {
       <span class="avatar" aria-hidden="true">${esc(ini)}</span>
       <div style="flex:1;min-width:180px"><div class="eyebrow">ผู้เรียน</div>
         <h2 style="color:var(--brand-text);font-size:clamp(22px,2.6vw,28px)">${esc(nameOf(r))}${p.nickname ? ` <span class="muted" style="font-size:.7em;font-weight:400">(${esc(p.nickname)})</span>` : ''}</h2>
-        <div class="muted small">${esc(branchOf(r))}${p.startDate ? ' · เริ่มงาน ' + esc(fmtDate(new Date(p.startDate).getTime())) : ''} · ใช้งานล่าสุด ${rel(s.last)}</div></div>
+        <div class="muted small">${p.empCode ? 'รหัส ' + esc(p.empCode) + ' · ' : ''}${esc(branchOf(r))}${p.startDate ? ' · เริ่มงาน ' + esc(fmtDate(new Date(p.startDate).getTime())) : ''} · ใช้งานล่าสุด ${rel(s.last)}</div></div>
       <span class="chip ${st.chip}" style="font-size:13.5px;padding:5px 12px">${st.label}</span></div></div>
     <div class="kpis k4">
       <div class="kpi"><span>บทที่สอบผ่าน</span><b>${s.passed}/${DRAFT.length}</b><small>เกณฑ์ ${PASS}%</small></div>
@@ -524,7 +547,7 @@ function queueWrite(uid) {
 }
 
 /* ── ลงทะเบียน ── */
-DA.hr = { render, renderPerson };
+DA.hr = { render, renderPerson, refreshHead: () => { const h = $('#hr-head'); if (h && S.route.name === 'hr') h.innerHTML = headHTML(); } };
 DA.hr.api = { filtered, rowsOf, src, stats, branchOf, nameOf, ST, ST_ORDER, rel, wireTips, redraw: () => renderBody(), setBranch };
 Object.assign(DA.acts, {
   'hr-view': el => setView(el.dataset.v),

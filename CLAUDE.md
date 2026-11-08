@@ -2,7 +2,7 @@
 
 This is an interactive Thai training course for new dental assistants (ผู้ช่วยทันตแพทย์) at Smile Gallery Dental Clinic (https://www.smilegallery.clinic/). Most learners are new staff with no background.
 
-- It is a demo for clinic executives. The content is ready to try, but a dentist (หมอเอก) must review it before real use.
+- It is a demo for clinic executives. The content is ready to try, but one of the clinic's dentists must review it before real use. (Don't name a specific dentist; nobody has been named yet.)
 - The style is cute, in the spirit of hearjot.mfec.dev. It uses the Smile Gallery logo and colors: navy `#002D73` / `#2F368F` and red `#E0232E`.
 - It is desktop-first and responsive down to 375px.
 - All UI text is in Thai. Reply to the user in Thai.
@@ -27,6 +27,18 @@ This is an interactive Thai training course for new dental assistants (ผู้
     - `signoffs/{self}`: read interact, write admin
     - `media`: read view, write admin
   - `user`, `assets` and `downloads`.
+
+## The web version (Firebase)
+
+- **URL:** https://smilegallerytraining.web.app, from Firebase project `smilegallerytraining` (Spark plan, free). The CLI is logged in as the clinic account that owns the project.
+- It wraps the same `index.html` and scripts with `web/auth.js` and `web/auth.css`, which add sign-in (Google or email and password; the user enabled both providers in the Console on 2026-11-07, and both auth.js `viaAllowed` and the rules `signedIn()` reject any other provider), registration, HR approval and user management. The Artifact keeps working unchanged. app.js and hr.js only reach the web layer through `DA.platform` and similar guards.
+- **Build and deploy:** `python scripts/build_web.py`, then `cd dist-web && firebase deploy` (`--only hosting` for content-only changes). For a local demo with fake Firebase: `preview_start {name:"da-web-fake"}` (port 8766, `?reset=1&as=admin|hr|learner|pending|new|google`; sample accounts use the password `test1234`, and `google` is a new Google account that has not registered yet; the Google button opens a fake account chooser).
+- Google sign-in uses `signInWithPopup` with `prompt: 'select_account'`. Google accounts are e-mail-verified, so an admin gmail becomes admin right after registering. LINE, Facebook and Instagram in-app browsers block Google OAuth, so auth.js shows a hint there (`IN_APP`) and email/password stays available. Closing the popup shows no error (`SILENT`).
+- `web/site.json` is gitignored. It holds the Firebase web config and the `admins` e-mails; keep the spelling "smilegallary…" exactly. The served page gets only SHA-256 hashes of those e-mails. The real list goes into `dist-web/firestore.rules`.
+- Registration asks for ชื่อ-นามสกุล, **รหัสพนักงาน** and สาขา. The employee code is required for staff (auth.js, the rules and the fake all check it) and optional for admin e-mails. auth.js normalizes it to upper case with no spaces (`normEmp`). HR sees it under the name on the score overview, can search by it, sees it on the person page and as the first CSV column, and the users table flags duplicates with "รหัสซ้ำ". hr.js shows these only when `DA.platform` is set, so the Artifact is unchanged.
+- The first admin either presses "เข้าสู่ระบบด้วย Google" with the admin gmail and registers (code may be blank), which makes them admin at once, or signs up with the admin e-mail and a password, registers, presses "ส่งลิงก์ยืนยันอีเมล", opens the link, then "ยืนยันแล้ว"; the rules then let them promote themselves to admin.
+- The Firestore `(default)` database is in `asia-southeast1` (Singapore). It was moved from `nam5` on 2026-11-07 while still empty. `build_web.py` writes `"location": "asia-southeast1"` into `dist-web/firebase.json`, because `firebase deploy` would otherwise create a missing database in `nam5`. A location can't be changed later; moving means deleting the database and recreating it, and Firebase blocks reusing the `(default)` ID for about 5 minutes after a delete.
+- Security lives in `web/firestore.rules`. The Thai maintenance guide is `web/README.md`.
 
 ## Roles
 

@@ -1,0 +1,100 @@
+rules_version = '2';
+// DA Training Academy — กฎความปลอดภัย Firestore (ต้นแบบ)
+// scripts/build_web.py แทนที่ __ADMINS__ ด้วยรายชื่ออีเมลผู้ดูแลระบบจาก web/site.json
+// แล้วเขียนไฟล์จริงไว้ที่ dist-web/firestore.rules (deploy ด้วย firebase deploy)
+//
+// บทบาท (users/{uid}.role): learner ผู้เรียน · hr HR/หัวหน้า · admin ผู้ดูแลระบบ
+// สถานะ (users/{uid}.status): pending รออนุมัติ · active ใช้งาน · disabled ปิด · rejected ไม่อนุมัติ
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // รับเฉพาะบัญชีที่เข้าสู่ระบบด้วย Google หรืออีเมล/รหัสผ่าน (ไม่รับวิธีอื่น แม้จะเผลอเปิดไว้ใน Console)
+    function signedIn() {
+      return request.auth != null
+        && request.auth.token.firebase.sign_in_provider in ['password', 'google.com'];
+    }
+    function isSelf(uid) { return signedIn() && request.auth.uid == uid; }
+    function myEmail() { return request.auth.token.get('email', '').lower(); }
+    // อีเมลผู้ดูแลระบบต้องยืนยันแล้ว (บัญชี Google ยืนยันให้อัตโนมัติ · สมัครด้วยอีเมลต้องกดลิงก์ยืนยันก่อน)
+    function isAdminEmail() {
+      return signedIn() && request.auth.token.get('email_verified', false) == true
+        && myEmail() in __ADMINS__;
+    }
+    function myDoc() { return /databases/$(database)/documents/users/$(request.auth.uid); }
+    function hasMe() { return signedIn() && exists(myDoc()); }
+    function me() { return get(myDoc()).data; }
+    function active() { return hasMe() && me().status == 'active'; }
+    function isHR() { return active() && me().role in ['hr', 'admin']; }
+    function isAdmin() { return active() && me().role == 'admin'; }
+
+    function str(v, n) { return v is string && v.size() <= n; }
+    function profOK(d) {
+      return str(d.name, 60) && d.name.size() > 0 && str(d.nickname, 30) && str(d.empCode, 20)
+        && str(d.branch, 60) && str(d.startDate, 10);
+    }
+    function changed() { return request.resource.data.diff(resource.data).affectedKeys(); }
+    function userKeys() {
+      return ['email', 'name', 'nickname', 'empCode', 'branch', 'startDate', 'role', 'status',
+              'createdAt', 'updatedAt', 'profileAt', 'reviewedBy', 'reviewedAt'];
+    }
+
+    // ทะเบียนผู้ใช้
+    match /users/{uid} {
+      allow read: if isSelf(uid) || isHR();
+
+      // ลงทะเบียนครั้งแรก: ผู้เรียนรออนุมัติ หรืออีเมลผู้ดูแลระบบใช้งานได้ทันที
+      allow create: if isSelf(uid)
+        && request.resource.data.keys().hasOnly(userKeys())
+        && request.resource.data.keys().hasAll(userKeys())
+        && request.resource.data.email == myEmail()
+        && profOK(request.resource.data)
+        && request.resource.data.reviewedBy == '' && request.resource.data.reviewedAt == 0
+        // ผู้เรียนต้องกรอกรหัสพนักงาน เพื่อให้ HR ติดตามรายคนได้ (อีเมลผู้ดูแลระบบเว้นว่างได้)
+        && ((request.resource.data.role == 'learner' && request.resource.data.status == 'pending'
+             && (request.resource.data.empCode.size() > 0 || myEmail() in __ADMINS__))
+            || (isAdminEmail() && request.resource.data.role == 'admin' && request.resource.data.status == 'active'));
+
+      allow update: if
+        // 1) เจ้าของบัญชีแก้ข้อมูลส่วนตัว (แก้สิทธิ์หรือสถานะตัวเองไม่ได้)
+        (isSelf(uid)
+          && changed().hasOnly(['name', 'nickname', 'empCode', 'branch', 'startDate', 'updatedAt', 'profileAt'])
+          && profOK(request.resource.data)
+          && (resource.data.role != 'learner' || request.resource.data.empCode.size() > 0 || myEmail() in __ADMINS__))
+        // 2) อีเมลผู้ดูแลระบบยกระดับตัวเองเป็น admin
+        || (isSelf(uid) && isAdminEmail()
+          && changed().hasOnly(['role', 'status', 'updatedAt'])
+          && request.resource.data.role == 'admin' && request.resource.data.status == 'active')
+        // 3) HR อนุมัติ/ปิด/แก้ข้อมูลคนอื่น · HR ทั่วไปจัดการได้เฉพาะผู้เรียน · ให้สิทธิ์ HR ได้เฉพาะ admin
+        || (!isSelf(uid) && isHR()
+          && changed().hasOnly(['status', 'role', 'name', 'nickname', 'empCode', 'branch', 'startDate',
+                                'updatedAt', 'profileAt', 'reviewedBy', 'reviewedAt'])
+          && request.resource.data.role in ['learner', 'hr', 'admin']
+          && request.resource.data.status in ['pending', 'active', 'disabled', 'rejected']
+          && profOK(request.resource.data)
+          && str(request.resource.data.reviewedBy, 60)
+          && (isAdmin() || (resource.data.role == 'learner' && request.resource.data.role == 'learner')));
+
+      // ปกติไม่ลบ (ใช้ "ปิดการใช้งาน") ลบได้เฉพาะ admin และลบตัวเองไม่ได้
+      allow delete: if isAdmin() && !isSelf(uid);
+    }
+
+    // ความคืบหน้าการเรียน: เจ้าของเขียนได้เมื่อบัญชีใช้งานอยู่ · HR อ่านได้ทุกคน
+    match /progress/{uid} {
+      allow read: if (isSelf(uid) && active()) || isHR();
+      allow create, update: if isSelf(uid) && active();
+      allow delete: if (isSelf(uid) && active()) || isAdmin();
+    }
+
+    // ผลประเมินหน้างาน: HR เขียน · เจ้าของอ่านของตัวเอง
+    match /signoffs/{uid} {
+      allow read: if (isSelf(uid) && active()) || isHR();
+      allow write: if isHR();
+    }
+
+    // ลิงก์วิดีโอบทเรียน (media/videos): ทุกคนที่ใช้งานอยู่อ่านได้ · HR แก้ได้
+    match /media/{id} {
+      allow read: if active();
+      allow write: if isHR();
+    }
+  }
+}

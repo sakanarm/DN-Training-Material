@@ -1,6 +1,13 @@
 # local preview build (python scripts/preview.py)
 .preview/
 
+# web version (scripts/build_web.py): real Firebase config + admin emails, build output, deploy cache
+web/site.json
+dist-web/
+.firebase/
+firebase-debug.log
+firestore-debug.log
+
 # per-machine Claude Code settings
 .claude/settings.local.json
 
@@ -11,3 +18,6 @@ desktop.ini
 __pycache__/
 *.pyc
 ~$*
+
+# local demo of the web version (build_web.py --fake)
+.preview-web/

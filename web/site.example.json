@@ -1,0 +1,14 @@
+{
+  "_comment": "คัดลอกเป็น web/site.json (ไฟล์นี้ไม่ขึ้น git) แล้วใส่ค่าจาก Firebase Console > Project settings > Your apps",
+  "firebase": {
+    "apiKey": "",
+    "authDomain": "",
+    "projectId": "",
+    "storageBucket": "",
+    "messagingSenderId": "",
+    "appId": ""
+  },
+  "admins": [],
+  "branches": [],
+  "useEmulators": false
+}

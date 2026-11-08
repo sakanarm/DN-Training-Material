@@ -268,8 +268,11 @@ function dbErr(e, ctx) {
 DA.dbErr = dbErr;
 function goLocal(why) { S.mode = 'local'; S.why = why; persistLocal(); renderSync(); if (S.route.name === 'results') renderMain(); }
 
+/* DA.platform: ตั้งโดยเวอร์ชันเว็บ (web/auth.js) ให้หน้าตาเหมือน window.claude คือมี use(name)
+   ถ้าไม่มี (เปิดใน claude.ai) จะใช้ window.claude ตามเดิมทุกอย่าง */
 async function connect() {
-  const c = window.claude;
+  const c = DA.platform || window.claude;
+  if (DA.platform && DA.platform.why) Object.assign(WHY_T, DA.platform.why);
   if (!c || typeof c.use !== 'function') return goLocal('nohost');
   const use = n => Promise.resolve().then(() => c.use(n)).catch(() => null);
   const [db, user, assets, downloads] = await Promise.all(['db', 'user', 'assets', 'downloads'].map(use));
@@ -381,9 +384,13 @@ const twinkle = style => `<svg class="twinkle" style="${style}" viewBox="0 0 24 
 const rDenta = say => `<div class="r-denta" aria-hidden="true"><span class="r-say">${esc(say)}</span>${MASCOT}</div>`;
 const allPassed = () => DRAFT.length > 0 && DRAFT.every(m => postPassed(gm(m.id)));
 DA.MASCOT = MASCOT; DA.cloud = cloud; DA.rDenta = rDenta;
+/* เวอร์ชันเว็บซ่อนเมนู HR และโหมดนำเสนอจากผู้เรียน ส่วนใน claude.ai เห็นครบเหมือนเดิม */
+const mgrOK = () => !DA.platform || !!DA.platform.manager;
+DA.mgrOK = mgrOK;
 function renderShell() {
+  const P = DA.platform || {}, mgr = mgrOK();
   $('#app').innerHTML = `
-  <div class="ribbon"><div class="wrap"><span><span class="dot"></span><b>ต้นแบบ (Demo)</b> เพื่อนำเสนอผู้บริหาร · เนื้อหารอทันตแพทย์ตรวจทาน</span><span>Smile Gallery Dental Clinic</span></div></div>
+  <div class="ribbon"><div class="wrap"><span><span class="dot"></span>${P.ribbon || '<b>ต้นแบบ (Demo)</b> เพื่อนำเสนอผู้บริหาร · เนื้อหารอทันตแพทย์ตรวจทาน'}</span><span>Smile Gallery Dental Clinic</span></div></div>
   <header class="topbar"><div class="wrap">
     <button class="brand" data-act="go" data-r="home" aria-label="หน้าหลัก DA Academy">
       <span class="brand-logo"><img src="img/logo-smile-gallery.png" alt="Smile Gallery Dental Clinic" width="133" height="38"></span>
@@ -393,23 +400,24 @@ function renderShell() {
       <button data-act="go" data-r="home" data-nav="home">${ic('home')}หน้าหลัก</button>
       <button data-act="go" data-r="daily" data-nav="daily">${ic('refresh')}ทบทวนรายวัน<i class="ndot" aria-hidden="true"></i></button>
       <button data-act="go" data-r="results" data-nav="results">${ic('award')}ผลการเรียน</button>
-      <button data-act="go" data-r="hr" data-nav="hr">${ic('chart')}สำหรับ HR</button>
+      ${mgr ? `<button data-act="go" data-r="hr" data-nav="hr">${ic('chart')}สำหรับ HR</button>` : ''}
     </nav>
     <div class="tb-right">
       <button class="sync" id="sync" data-act="go" data-r="results"><i></i><span></span></button>
-      <button class="switch" id="present" role="switch" aria-checked="false" data-act="present" title="เปิดดูทุกบทและทุกแบบฝึกได้ทันที ไม่ต้องทำตามลำดับ"><span class="tr"></span><span class="lbl-long">โหมดนำเสนอ</span></button>
+      ${mgr ? `<button class="switch" id="present" role="switch" aria-checked="false" data-act="present" title="เปิดดูทุกบทและทุกแบบฝึกได้ทันที ไม่ต้องทำตามลำดับ"><span class="tr"></span><span class="lbl-long">โหมดนำเสนอ</span></button>` : ''}
+      ${P.shellRight ? P.shellRight() : ''}
     </div>
   </div></header>
   <main id="main"></main>
-  <footer class="footer"><div class="wrap">
+  <footer class="footer"><div class="wrap">${P.footer || `
     <div><b>Smile Gallery · DA Academy</b><br>ต้นแบบระบบฝึกอบรมผู้ช่วยทันตแพทย์ เพื่อการนำเสนอ</div>
-    <div>ไม่ใช่ระบบทางการของคลินิก · เนื้อหาอยู่ระหว่างรอทันตแพทย์ตรวจทาน<br>ข้อมูลใน HR Dashboard โหมดตัวอย่างเป็นข้อมูลสมมติทั้งหมด</div>
+    <div>ไม่ใช่ระบบทางการของคลินิก · เนื้อหาอยู่ระหว่างรอทันตแพทย์ตรวจทาน<br>ข้อมูลใน HR Dashboard โหมดตัวอย่างเป็นข้อมูลสมมติทั้งหมด</div>`}
   </div></footer>
   <nav class="tabbar" aria-label="เมนูหลัก">
     <button data-act="go" data-r="home" data-nav="home">${ic('home')}หน้าหลัก</button>
     <button data-act="go" data-r="daily" data-nav="daily">${ic('refresh')}ทบทวน<i class="ndot" aria-hidden="true"></i></button>
     <button data-act="go" data-r="results" data-nav="results">${ic('award')}ผลการเรียน</button>
-    <button data-act="go" data-r="hr" data-nav="hr">${ic('chart')}HR</button>
+    ${mgr ? `<button data-act="go" data-r="hr" data-nav="hr">${ic('chart')}HR</button>` : ''}
   </nav>`;
   renderSync(); renderPresent();
 }
@@ -459,8 +467,8 @@ function renderMain() {
   else if (r.name === 'profile') main.innerHTML = profileHTML();
   else if (r.name === 'results') main.innerHTML = resultsHTML();
   else if (r.name === 'cert') renderCert(main);
-  else if (r.name === 'hr' && DA.hr) DA.hr.render(main);
-  else if (r.name === 'person' && DA.hr) DA.hr.renderPerson(main, r.id);
+  else if (r.name === 'hr' && DA.hr && mgrOK()) DA.hr.render(main);
+  else if (r.name === 'person' && DA.hr && mgrOK()) DA.hr.renderPerson(main, r.id);
   else if (r.name === 'daily' && DA.daily) DA.daily.render(main);
   else { S.route = { name: 'home' }; main.innerHTML = homeHTML(); }
   renderNav();
@@ -569,7 +577,7 @@ function homeHTML() {
     <div class="sec-head"><div><div class="eyebrow">หลักสูตร</div><h2>${C.modules.length} บทเรียน ใน 3 ระดับ</h2><p>เนื้อหาเรียบเรียงจากเอกสารปฐมนิเทศของคลินิกและแนวทางมาตรฐานสากล ${C.modules.length > DRAFT.length ? 'บทที่ยังวางโครงจะเติมเนื้อหาในระยะถัดไป' : 'ทุกบทพร้อมให้ทดลองเรียน และรอทันตแพทย์ตรวจทานก่อนใช้จริง'}</p></div></div>
     ${levels}
   </div></section>
-  ${DA.skills ? DA.skills.homeTeaser() : ''}`;
+  ${DA.skills && mgrOK() ? DA.skills.homeTeaser() : ''}`;
 }
 function modCard(m) {
   const no = modNo(m);
@@ -765,10 +773,13 @@ function blocksHTML(blocks) {
     }
   }).join('');
 }
+/* เวอร์ชันเว็บเล่น YouTube (Unlisted) ในหน้าได้เลย ส่วนใน claude.ai เปิดเป็นลิงก์เหมือนเดิม */
+const ytId = u => { const x = /^https:\/\/(?:www\.|m\.)?(?:youtube\.com\/(?:watch\?(?:[^#]*&)?v=|embed\/|shorts\/|live\/)|youtu\.be\/)([\w-]{11})(?![\w-])/i.exec(u || ''); return x ? x[1] : null; };
 function videoHTML(m, l) {
   const key = m.id + '_' + l.key, v = S.media[key];
   let body;
   if (v && v.kind === 'asset') body = `<div class="video"><video controls preload="metadata" playsinline src="/_blob/${encodeURIComponent(v.id)}"></video></div>`;
+  else if (v && v.kind === 'link' && DA.platform && ytId(v.url)) body = `<div class="video yt"><iframe src="https://www.youtube-nocookie.com/embed/${ytId(v.url)}?rel=0" title="วิดีโอสาธิต: ${esc(l.title)}" allow="accelerometer; encrypted-media; gyroscope; picture-in-picture; fullscreen" allowfullscreen loading="lazy" referrerpolicy="strict-origin-when-cross-origin"></iframe></div>`;
   else if (v && v.kind === 'link') body = `<a class="vlink" href="${esc(v.url)}" target="_blank" rel="noopener noreferrer"><span class="play">${ic('play')}</span><span><b>เปิดวิดีโอสาธิต</b><small>${esc(v.url)}</small></span></a>`;
   else body = storyboardHTML(m, l);
   let ed = '';
@@ -1030,6 +1041,7 @@ function saveProfile() {
   if (!name) { toast('กรุณากรอกชื่อ-นามสกุล'); $('#f-name').focus(); return; }
   S.prog.profile = { name: name.slice(0, 60), nickname: v('f-nick').slice(0, 30), branch: v('f-branch').slice(0, 60), startDate: v('f-start').slice(0, 10), at: Date.now() };
   save();
+  if (DA.platform && DA.platform.onProfile) DA.platform.onProfile(S.prog.profile);
   toast('บันทึกข้อมูลแล้ว');
   const nx = S.route.next;
   if (nx && nx.name === 'mod') openModule(nx.id, nx.step);
@@ -1340,7 +1352,11 @@ DA.boot = function () {
   const st = lsGet(LS_KEY);
   S.prog = st && st.prog ? cleanProg(st.prog) : blankProg();
   S.localUid = st && typeof st.uid === 'string' ? st.uid : null;
-  const pr = lsGet(LS_PREFS); S.present = !!(pr && pr.present);
+  const P = DA.platform;
+  /* เวอร์ชันเว็บรู้ตัวผู้ใช้ก่อนเปิดหน้า: เครื่องส่วนกลางที่เคยมีคนอื่นใช้ เริ่มจากความคืบหน้าว่าง */
+  if (P && P.uid && S.localUid !== P.uid) { S.prog = blankProg(); S.localUid = P.uid; }
+  if (P && P.onBoot) P.onBoot(S);
+  const pr = lsGet(LS_PREFS); S.present = mgrOK() && !!(pr && pr.present);
   renderShell();
   renderMain();
   document.addEventListener('click', onClick);
