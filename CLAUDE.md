@@ -9,13 +9,13 @@ This is an interactive Thai training course for new dental assistants (ผู้
 
 ## The published Artifact
 
-- **URL:** https://claude.ai/artifact/MT3cMZMaxNKW7H5c5jM7dA (owner rooneysakan@gmail.com; shared as "Anyone with the link" as of version 5). Version 4 holds all 10 modules and the DENTA mascot. Version 5 adds the certificate, DENTA reactions and the results banner. Version 6 adds the daily refresher (`daily.js`). Version 7 adds the skills map (`skills.js`).
+- **URL:** https://claude.ai/artifact/MT3cMZMaxNKW7H5c5jM7dA (owner rooneysakan@gmail.com; shared as "Anyone with the link" as of version 5). Version 4 holds all 10 modules and the DENTA mascot. Version 5 adds the certificate, DENTA reactions and the results banner. Version 6 adds the daily refresher (`daily.js`). Version 7 adds the skills map (`skills.js`). The learning plan (`plan.js`) is on the web version but **not yet published** to the Artifact; the next publish adds it.
 - **Before you publish from a new machine or conversation**, first call `Artifact action:"read"` with that URL, then publish with `url` set to it. Otherwise you create a new artifact or the publish is refused.
 - **Publish call:**
   ```
   file_path: <repo>/index.html
   url: https://claude.ai/artifact/MT3cMZMaxNKW7H5c5jM7dA
-  files: {"course.js":"course.js","app.js":"app.js","engines.js":"engines.js","hr.js":"hr.js","skills.js":"skills.js","daily.js":"daily.js"}
+  files: {"course.js":"course.js","app.js":"app.js","engines.js":"engines.js","hr.js":"hr.js","skills.js":"skills.js","daily.js":"daily.js","plan.js":"plan.js"}
   ```
   - The `img/*` files are already published. Add them to `files` only when an image is added or changed.
   - Omit `icon` and `capabilities` so the stored declaration carries forward. Passing a non-empty `capabilities` object replaces the whole set.
@@ -40,6 +40,31 @@ This is an interactive Thai training course for new dental assistants (ผู้
 - The Firestore `(default)` database is in `asia-southeast1` (Singapore). It was moved from `nam5` on 2026-11-07 while still empty. `build_web.py` writes `"location": "asia-southeast1"` into `dist-web/firebase.json`, because `firebase deploy` would otherwise create a missing database in `nam5`. A location can't be changed later; moving means deleting the database and recreating it, and Firebase blocks reusing the `(default)` ID for about 5 minutes after a delete.
 - Security lives in `web/firestore.rules`. The Thai maintenance guide is `web/README.md`.
 
+### Installable app (PWA, web version only)
+
+- **Files:**
+  - `web/pwa.js` loads after auth.js and exports `DA.pwa`. auth.js calls it only through `if (DA.pwa)` guards: `gateHTML()` (the pill under the sign-in card), `menuHTML()` (the "ติดตั้งเป็นแอป" account-menu item) and `onBoot()`.
+  - `web/pwa/sw.js` is a template. `build_web.py` fills `'__VERSION__'` (a hash of the build), `__PRECACHE__` (the page, scripts, styles, manifest, small icons and course images) and `__CDN__` (the Firebase SDK URLs; empty in the fake build).
+  - `web/pwa/*.png` are the icons, made from `img/denta.png` by `python scripts/make_icons.py` (needs Pillow; the icons are committed).
+  - The build writes `manifest.webmanifest`, `icons/` and `sw.js`. firebase.json serves sw.js and the manifest with no-cache.
+- **Install paths:** `DA.pwa.mode()` picks one.
+  - Android and desktop Chrome/Edge use the `beforeinstallprompt` prompt.
+  - iPhone shows a steps sheet (Share → เพิ่มไปยังหน้าจอโฮม).
+  - LINE/Facebook/Instagram show an "open in the browser first" sheet with a copy-link button. LINE also gets a "เปิดในเบราว์เซอร์" button that loads `/?openExternalBrowser=1`, a LINE URL parameter for iOS/Android LINE only.
+  - On mobile a banner sits above the tab bar after sign-in. "ไว้ทีหลัง" hides it for 14 days (localStorage `da-pwa`).
+- **Service worker caching:**
+  - Navigation is network-first with a 4 s timeout, then falls back to the cached `./`.
+  - Same-origin files are cache-first in `da-shell-<version>`, the SDK is in `da-cdn-v1` and Google Fonts are in `da-fonts-v1`.
+  - It never touches `/__/`, Firestore, auth or YouTube.
+  - It uses skipWaiting and clients.claim, and activate deletes old `da-shell-*` caches.
+  - On the first SW control pwa.js re-fetches the font URLs, so offline pages keep the Thai font.
+- **Updates:** `<meta name="da-build">` holds the page's build. pwa.js asks the active SW for its version and shows the "มีเนื้อหาเวอร์ชันใหม่" bar only when the two differ. An installed app checks again when it comes back to the foreground after 1 hour.
+- **Offline data:** auth.js `keepOffline()` turns on Firestore `enablePersistence({synchronizeTabs:true})` in `watchMe`. It is skipped on a shared device ("เครื่องส่วนกลาง", localStorage `da-web:shared`). signOut terminates Firestore and clears that persistence.
+  - Firestore `set()` stays pending offline, so app.js keeps `S.writing` set and the account menu's sign-out asks for a second press ("คะแนนยังส่งไม่ครบ").
+  - Don't name a second function `persist`: an `async function persist()` for auth setPersistence once shadowed the Firestore one and silently disabled offline data.
+- **Troubleshooting:** `?nosw=1` unregisters the SW and clears the `da-*` caches.
+- The Artifact never loads pwa.js.
+
 ## Roles
 
 The page has no login of its own. Identity is the viewer's claude.ai account, and roles come from the artifact's Share permissions.
@@ -54,15 +79,19 @@ A custom login (employee code or LINE) would need a backend. It has not been bui
 
 | File | What it holds |
 |---|---|
-| `index.html` | `<title>`, the `<style>` (all CSS and theme tokens), and the markup shell. There is **no** doctype, html, head or body; the Artifact tool adds them at publish time. Scripts load in this order: course.js → app.js → engines.js → hr.js → skills.js → daily.js, then `DA.boot()`. |
+| `index.html` | `<title>`, the `<style>` (all CSS and theme tokens), and the markup shell. There is **no** doctype, html, head or body; the Artifact tool adds them at publish time. Scripts load in this order: course.js → app.js → engines.js → hr.js → skills.js → daily.js → plan.js, then `DA.boot()`. |
 | `course.js` | `window.COURSE`, which holds all course content. The header comment documents the block types. Edit content here. |
 | `app.js` | Router, home page, module and lesson pages, storyboard "video" player (`SB_ART` regex picks the illustration for each shot), tests, progress, db and user connection, and the certificate. The certificate route is `{name:'cert'}`: `renderCert` and `drawCert` draw a 1754×1240 canvas, and `DA.acts['cert-dl']` saves it as a PNG through `downloads`. The name comes from the profile. Until every module's post-test is passed it shows a "ตัวอย่าง" watermark. `rDenta(say)` puts the DENTA reaction on the result cards. |
 | `engines.js` | Practice engines: scenario, spot, match, sequence, tray, clock, tooth. |
-| `hr.js` | HR page: everyone's scores, sign-offs and CSV export. It falls back to sample data. The route is `{name:'hr'}` with `view:'dash'` (default) or `view:'map'`, and the header tabs (`data-act="hr-view"`) switch between the score overview and the skills map. It exports `DA.hr.api` (`filtered`, `rowsOf`, `branchOf`, `nameOf`, `ST`, `wireTips`, `redraw`, `setBranch` and more) for skills.js. |
+| `hr.js` | HR page: everyone's scores, sign-offs and CSV export. It falls back to sample data. The route is `{name:'hr'}` with `view:'dash'` (default), `view:'map'`, `view:'plan'` or (web only) `view:'users'`, and the header tabs (`data-act="hr-view"`) switch between them. On the web, `rowsOf('real')` also includes `DA.platform.roster()` (every approved learner, with a blank progress if they have never opened a lesson), so HR sees and follows people who haven't started. It exports `DA.hr.api` (`filtered`, `rowsOf`, `branchOf`, `nameOf`, `ST`, `wireTips`, `redraw`, `setBranch` and more) for skills.js. |
 | `skills.js` | Skills map: see "Skills map" below. It exports `DA.skills`; hr.js and app.js call it only through `if (DA.skills)` guards. |
+| `plan.js` | Learning plan (route `{name:'plan'}`, HR tab `view:'plan'`): due dates per module counted from `profile.startDate`. See "Learning plan" below. It exports `DA.plan`; app.js and hr.js call it only through `if (DA.plan)` guards. |
 | `daily.js` | Daily refresher (route `{name:'daily'}`, nav "ทบทวนรายวัน"): 5 questions a day by spaced repetition, plus a streak. See "Daily refresher" below. It exports `DA.daily`; app.js calls it only through `if (DA.daily)` guards, so the course still works without the file. |
 | `img/` | Instrument and tray photos, `logo-smile-gallery.png`, and `denta.png`. `denta.png` is the clinic mascot น้องเดนต้า, used on the home hero and in the video intro/outro (`MASCOT` in app.js). It was cut from a 1028×257 banner, so it is only about 179×256 px; swap in a larger PNG with a transparent background if the clinic has one. |
 | `scripts/preview.py` | Local preview server; see "Testing" below. |
+| `web/` | The Firebase web version: `auth.js`, `auth.css`, `pwa.js`, `pwa/` (sw.js template and icons), `firestore.rules`, `dev/fake-firebase.js` (the local fake), `site.example.json` and the gitignored `site.json`. |
+| `scripts/build_web.py` | Builds the web version into `dist-web/`, or with `--fake --serve` into `.preview-web/` on port 18766. |
+| `scripts/make_icons.py` | Makes the PWA icons in `web/pwa/` from `img/denta.png`. |
 
 ## Module schema (`COURSE.modules[]`)
 
@@ -113,6 +142,17 @@ The totals are 40 lessons, 34 practices and 95 test questions.
   Opening the page never writes anything. The first write happens on the first answer. `merge` joins streak runs from two devices.
 - Home has a "ทบทวนรายวันกับน้องเดนต้า" button, the results page has a streak strip, and the nav shows a red dot until today's set is done.
 
+## Learning plan (`plan.js`)
+
+- **Rule:** a module is "เรียนจบ" when its post-test is passed (80%). It is due `days[m]` calendar days after `profile.startDate` (local calendar, like the daily refresher). On-site sign-offs don't count toward the due date.
+- **Defaults (`DEF`):** m01 3, m02 7, m03 10, m04 14, m05 30, m06 45, m07 60, m08 75, m09 80, m10 90 days. A new module missing from `DEF` gets the previous one + 14.
+- **HR settings:** stored in `media/plan` = `{v:1, days:{mXX:1..365}, updatedAt}`. The existing `media` rules already fit (web: read `active()`, write `isHR()`; Artifact: read view, write admin). `subscribe()` listens with `onSnapshot`, so learners see a change without reloading. With no doc, the defaults apply.
+- **Module status (`modPlan`):** `ok` passed on time · `late` passed after the due date · `over` past due · `soon` due within `SOON` = 3 days · `todo` not yet due · `nostart` no start date.
+- **Learner side:** the home card (`homeCard`, `.dnext.pl`), a line on each module card (`modLine`), a strip on the results page (`resultsStrip`), and the timeline page `{name:'plan'}`, sorted by due date with a "วันนี้" marker. The nav highlights ผลการเรียน on it.
+- **HR side (`hrDraw`):** 4 KPIs (ตามแผน / ใกล้ครบกำหนด / เลยกำหนด / ไม่ระบุวันเริ่มงาน), the "ต้องติดตาม" table (over first, then by worst lateness), and the per-module settings table with a live team bar while editing. Save is disabled while the values are clean or invalid; "คืนค่าเริ่มต้น" and "ยกเลิกการแก้ไข" restore. Without edit rights (sample data) the table can be tried but not saved.
+- **Elsewhere:** a plan column on the score overview (`hrCell`), chips on the person page (`personChip`, `modChip`), and CSV columns (`csvHead`, `csvRow`, `csvMod`).
+- **Mobile:** below 700px the two HR plan tables turn into cards (`.pl-ftbl`, `.pl-tbl` with `data-label`), so nothing scrolls sideways.
+
 ## Skills map (`skills.js`)
 
 - **Where it appears:**
@@ -153,8 +193,8 @@ python scripts/preview.py
 This builds `.preview/` and serves http://127.0.0.1:18765. In Claude Code, `preview_start {name:"da-preview"}` does the same thing through `.claude/launch.json`. Restart it after edits.
 - The preview ports (18765 for da-preview, 18766 for da-web-fake) stay above 15000 on purpose. On this machine Windows' dynamic port range is 1024–15000, and Hyper-V/WinNAT reserve shifting blocks inside it after each restart (8670–8769 once blocked the old 8765/8766 with WinError 10013). `netsh int ipv4 show excludedportrange protocol=tcp` shows the current blocks.
 
-- Use `DA.go({name:'mod', id:'m06', step:'L:l1'|'P:p1'|'pre'|'post'|'check', peek:true})` to jump straight to a step. `DA.go({name:'daily'})` opens the daily refresher, and `DA.go({name:'hr', view:'map'})` opens the skills map.
-- The browser caches the scripts. After a restart, run `await Promise.all(['app.js','daily.js','course.js','engines.js','hr.js','skills.js'].map(f=>fetch('/'+f,{cache:'reload'})))` and then reload.
+- Use `DA.go({name:'mod', id:'m06', step:'L:l1'|'P:p1'|'pre'|'post'|'check', peek:true})` to jump straight to a step. `DA.go({name:'daily'})` opens the daily refresher, `DA.go({name:'plan'})` the learner's plan, `DA.go({name:'hr', view:'map'})` the skills map and `DA.go({name:'hr', view:'plan'})` the HR plan.
+- The browser caches the scripts. After a restart, run `await Promise.all(['app.js','daily.js','course.js','engines.js','hr.js','skills.js','plan.js'].map(f=>fetch('/'+f,{cache:'reload'})))` and then reload.
 - Before publishing, check these:
   - there are no console errors
   - every lesson renders and has video shots and a check

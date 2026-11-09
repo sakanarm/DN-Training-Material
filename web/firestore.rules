@@ -91,7 +91,7 @@ service cloud.firestore {
       allow write: if isHR();
     }
 
-    // ลิงก์วิดีโอบทเรียน (media/videos): ทุกคนที่ใช้งานอยู่อ่านได้ · HR แก้ได้
+    // ลิงก์วิดีโอบทเรียน (media/videos) และกำหนดเรียนจบรายบท (media/plan): ทุกคนที่ใช้งานอยู่อ่านได้ · HR แก้ได้
     match /media/{id} {
       allow read: if active();
       allow write: if isHR();

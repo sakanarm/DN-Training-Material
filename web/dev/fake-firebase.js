@@ -306,6 +306,10 @@ function colRef(col) {
 }
 const FS = {
   useEmulator() { /* ไม่ใช้ */ },
+  /* ของจริงเก็บข้อมูลใน IndexedDB ให้เปิดได้ตอนออฟไลน์ · ของปลอมเก็บใน localStorage อยู่แล้ว */
+  enablePersistence: () => { FS.persisted = true; return Promise.resolve(); },
+  terminate: () => Promise.resolve(),
+  clearPersistence: () => Promise.resolve(),
   doc: path => docRef(String(path)),
   collection: path => colRef(String(path))
 };

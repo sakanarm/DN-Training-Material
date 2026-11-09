@@ -63,7 +63,8 @@ const ICONS = {
   shield: '<path d="M12 3 4 6v6c0 4.5 3.4 8.2 8 9 4.6-.8 8-4.5 8-9V6z"/><path d="m9 12 2 2 4-4"/>',
   chair: '<path d="M7 3v9h9"/><path d="M7 12l-2 4h12l1-4"/><path d="M9 16v4M15 16v4M16 12V8h3"/>',
   hand: '<path d="M8 13V5.5a1.5 1.5 0 0 1 3 0V12M11 11V4a1.5 1.5 0 0 1 3 0v7M14 11V5.5a1.5 1.5 0 0 1 3 0V14a7 7 0 0 1-7 7h-.5a6 6 0 0 1-5-2.7L2.6 15.4a1.6 1.6 0 0 1 2.6-1.9L8 16"/>',
-  heart: '<path d="M12 20s-7.5-4.6-9-9.5C2 7 4.4 4 7.5 4c2 0 3.5 1.2 4.5 2.6C13 5.2 14.5 4 16.5 4 19.6 4 22 7 21 10.5 19.5 15.4 12 20 12 20z"/><path d="M7 11h2.5l1.5-2.5 2 5 1.5-2.5H17"/>'
+  heart: '<path d="M12 20s-7.5-4.6-9-9.5C2 7 4.4 4 7.5 4c2 0 3.5 1.2 4.5 2.6C13 5.2 14.5 4 16.5 4 19.6 4 22 7 21 10.5 19.5 15.4 12 20 12 20z"/><path d="M7 11h2.5l1.5-2.5 2 5 1.5-2.5H17"/>',
+  cal: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>'
 };
 const ic = (n, cls) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"${cls ? ` class="${cls}"` : ''}>${ICONS[n] || ''}</svg>`;
 DA.ic = ic;
@@ -283,6 +284,7 @@ async function connect() {
   let uid = null;
   try { uid = user ? await user.id() : null; } catch (e) { uid = null; }
   subscribeMedia();
+  if (DA.plan) DA.plan.subscribe();
   renderNav();
   if (!uid) return goLocal('signedout');
   S.uid = uid;
@@ -422,7 +424,7 @@ function renderShell() {
   renderSync(); renderPresent();
 }
 function renderNav() {
-  const n = S.route.name, cur = (n === 'results' || n === 'cert') ? 'results' : (n === 'hr' || n === 'person') ? 'hr' : n === 'daily' ? 'daily' : 'home';
+  const n = S.route.name, cur = (n === 'results' || n === 'cert' || n === 'plan') ? 'results' : (n === 'hr' || n === 'person') ? 'hr' : n === 'daily' ? 'daily' : 'home';
   $$('[data-nav]').forEach(b => b.setAttribute('aria-current', b.dataset.nav === cur ? 'page' : 'false'));
   if (DA.daily) DA.daily.navDot();
 }
@@ -470,13 +472,14 @@ function renderMain() {
   else if (r.name === 'hr' && DA.hr && mgrOK()) DA.hr.render(main);
   else if (r.name === 'person' && DA.hr && mgrOK()) DA.hr.renderPerson(main, r.id);
   else if (r.name === 'daily' && DA.daily) DA.daily.render(main);
+  else if (r.name === 'plan' && DA.plan) DA.plan.render(main);
   else { S.route = { name: 'home' }; main.innerHTML = homeHTML(); }
   renderNav();
 }
 DA.renderMain = renderMain;
 function softRender() {
   const n = S.route.name;
-  if (n === 'home' || n === 'results') renderMain();
+  if (n === 'home' || n === 'results' || (n === 'plan' && DA.plan)) renderMain();
   else if (n === 'daily' && DA.daily) DA.daily.navDot();
   else if (n === 'mod') { const rail = $('#rail'); if (rail) rail.outerHTML = railHTML(modById(S.route.id)); }
 }
@@ -542,6 +545,7 @@ function homeHTML() {
       </div>
       ${nextBtn}
       ${DA.daily ? DA.daily.homeCard() : ''}
+      ${DA.plan ? DA.plan.homeCard() : ''}
       <div class="mini">
         <div><b>${passed}/${DRAFT.length}</b><span>บทที่สอบผ่าน</span></div>
         <div><b>${pDone}/${nPractice}</b><span>แบบฝึกที่ทำแล้ว</span></div>
@@ -593,6 +597,7 @@ function modCard(m) {
       <div class="mod-top"><span class="mod-no">บทที่ ${no}</span>${st.key === 'none' ? m.source.map(srcChip).join('') : `<span class="chip ${st.chip}">${esc(st.short || st.label)}</span>`}</div>
       <h4>${esc(m.title)}</h4><p>${esc(m.summary)}</p>
       <div class="meta"><span>${ic('clock')}${m.minutes} นาที</span><span>${ic('book')}${m.lessons.length} บทเรียน</span><span>${ic('puzzle')}${m.practice.length} แบบฝึก</span></div>
+      ${DA.plan ? DA.plan.modLine(m) : ''}
       <div class="prog"><div class="bar${st.key === 'done' ? ' ok' : ''}"><i style="width:${st.pct}%"></i></div><span>${st.pct}%</span></div>
     </button>`;
 }
@@ -1092,6 +1097,7 @@ function resultsHTML() {
       <div class="kpi"><span>เฉลี่ยหลังเรียน</span><b class="${aPost != null && aPre != null && aPost > aPre ? 'up' : ''}">${aPost == null ? '–' : aPost + '%'}</b><small>${aPost != null && aPre != null ? (aPost - aPre >= 0 ? '+' : '') + (aPost - aPre) + ' คะแนน' : '&nbsp;'}</small></div>
     </div>
     ${DA.daily ? DA.daily.resultsStrip() : ''}
+    ${DA.plan ? DA.plan.resultsStrip() : ''}
     ${note}
     <div class="tbl-wrap" style="margin-top:16px"><table>
       <thead><tr><th>บทเรียน</th><th class="num">ก่อนเรียน</th><th class="num">แบบฝึก</th><th class="num">หลังเรียน</th><th>สถานะ</th></tr></thead>

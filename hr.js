@@ -14,10 +14,11 @@ const H = {
   subbed: false, queue: {}, pend: {}, cd: null, ro: null
 };
 const canAdmin = () => !!(S.canEdit && S.db);
+const nRealRows = () => rowsOf('real').length;
 function src() {
   if (!canAdmin()) return 'sample';
   if (H.src) return H.src;
-  return H.real.state === 'ready' && Object.keys(H.real.prog).length ? 'real' : 'sample';
+  return H.real.state === 'ready' && nRealRows() ? 'real' : 'sample';
 }
 
 /* ── ข้อมูลตัวอย่าง (สมมติทั้งหมด ไม่ถูกบันทึกลงฐานข้อมูล) ── */
@@ -34,19 +35,30 @@ function buildSample() {
   const int = (a, b) => a + Math.floor(R() * (b - a + 1));
   const score = (m, lo, hi) => { const n = m.test.length || 10; return Math.round(int(Math.ceil(n * lo), Math.floor(n * hi)) / n * 100); };
   const stages = [7, 7, 7, 7, 7, 7, 6, 6, 5, 5, 5, 4, 4, 4, 3, 3, 3, 2, 2, 2, 1, 1, 0, 0].map(s => Math.round(s * DRAFT.length / 7));
+  /* เวลาของแต่ละบทอิงจำนวนวันในแผนการเรียน (plan.js) ให้ตัวอย่างมีทั้งคนที่ตามแผนและคนที่เลยกำหนด
+     ใช้ตัวสุ่มแยก (R2) เพื่อไม่ให้ลำดับการสุ่มเดิมของสาขา คะแนน และผลประเมินเปลี่ยน */
+  const R2 = rng(20261109), fl = (a, b) => a + R2() * (b - a), N = DRAFT.length;
+  const dm = DA.plan ? DA.plan.days() : null;
+  const D = i => i < 0 ? 0 : dm ? dm[DRAFT[i].id] : (i + 1) * 9;
+  const BEHIND = new Set([2, 8, 12, 15, 19, 21]);
   const list = [], sos = {};
   stages.forEach((stage, k) => {
     const id = 'demo-' + String(k + 1).padStart(2, '0');
     const branch = BRANCHES[Math.floor(R() * BRANCHES.length)];
-    const start = now - (8 + stage * 6 + int(0, 10)) * DAY;
-    const prog = { v: 1, profile: { name: NAMES[k], nickname: NICKS[k], branch, startDate: iso(start), at: start }, modules: {}, updatedAt: start };
-    const so = { modules: {} };
-    const span = (now - DAY / 2 - start) / (stage + 1);
-    const allSigned = stage === DRAFT.length && R() < 0.5;
+    int(0, 10);
+    const behind = BEHIND.has(k), fin = stage === N;
+    const pace = fin && behind ? fl(1.02, 1.2) : behind ? fl(0.8, 1.15) : fl(0.6, 0.95);
+    const E = fin ? D(N - 1) * pace + fl(1, 20) : behind ? D(stage) + fl(2, 12) : fl(D(stage - 1) + 1, D(stage));
+    const start = now - E * DAY;
     const blank = stage === 0 && k === stages.length - 1;
+    const prog = { v: 1, profile: { name: NAMES[k], nickname: NICKS[k], branch, startDate: blank ? '' : iso(start), at: start }, modules: {}, updatedAt: start };
+    const so = { modules: {} };
+    const allSigned = stage === DRAFT.length && R() < 0.5;
+    const cap = E - 0.5;
     DRAFT.forEach((m, i) => {
       if (i > stage || blank) return;
-      const at = f => Math.round(start + (i + f) * span);
+      const w0 = Math.min(i ? D(i - 1) * pace : 0.3, cap - 0.2), w1 = i < stage ? Math.min(D(i) * pace, cap) : E - 0.3;
+      const at = f => Math.round(start + (w0 + Math.min(f / 0.85, 1) * (w1 - w0)) * DAY);
       const md = { pre: { score: score(m, 0.2, 0.7), at: at(0.04) }, lessons: {}, practice: {}, post: null };
       const prac = (p, j) => { const b = int(12, 20) * 5; md.practice[p.id] = { best: b, last: Math.max(50, b - int(0, 2) * 5), tries: int(1, 3), at: at(0.45 + j * 0.06), timeSec: p.type === 'tray' ? int(70, 200) : 0 }; };
       if (i < stage) {
@@ -115,10 +127,14 @@ function onData() {
 }
 
 /* ── คำนวณ ── */
+/* เวอร์ชันเว็บ: นับผู้เรียนที่อนุมัติแล้วแต่ยังไม่เคยส่งคะแนนด้วย (ยังไม่มีเอกสาร progress)
+   HR จะเห็นคนที่ยังไม่เริ่มเรียน และแผนการเรียนจับคนที่เลยกำหนดได้ตั้งแต่วันแรก */
+const roster = () => (DA.platform && DA.platform.roster ? DA.platform.roster() : []);
+const realProg = id => H.real.prog[id] || (roster().includes(id) ? DA.blankProg() : null);
 function rowsOf(k) {
   /* เวอร์ชันเว็บ: ใช้ชื่อและสาขาล่าสุดจากทะเบียนผู้ใช้ (HR แก้ได้) แทนที่ผู้เรียนบันทึกไว้ */
   const ov = DA.platform && DA.platform.overlay;
-  if (k === 'real') return Object.keys(H.real.prog).map(id => ({ id, prog: ov ? ov(id, H.real.prog[id]) : H.real.prog[id], so: H.real.so[id] || null })).filter(r => r.prog);
+  if (k === 'real') return [...new Set([...Object.keys(H.real.prog), ...roster()])].map(id => { const p = realProg(id); return { id, prog: ov ? ov(id, p) : p, so: H.real.so[id] || null }; }).filter(r => r.prog);
   if (!H.sample) buildSample();
   return H.sample.map(x => ({ id: x.id, prog: x.prog, so: H.sampleSo[x.id] || null }));
 }
@@ -164,25 +180,28 @@ const sgn = v => (v > 0 ? '+' : '') + v;
 
 /* ── หน้าภาพรวม ── */
 const mapOn = () => H.view === 'map' && !!DA.skills;
+const planOn = () => H.view === 'plan' && !!DA.plan;
 /* แท็บ "จัดการผู้ใช้" มีเฉพาะเวอร์ชันเว็บ (web/auth.js ตั้ง DA.auth) */
 const usersOn = () => !!(DA.auth && DA.auth.renderUsers);
 const HEAD_T = {
   dash: ['ภาพรวมผลการฝึกอบรม', 'ติดตามคะแนนก่อนและหลังเรียน ความคืบหน้ารายบุคคล และบทที่รอหัวหน้าประเมินหน้างาน'],
   map: ['แผนที่ทักษะทั้งคลินิก', 'เห็นสถานะของพนักงานทุกคนในทุกบท แยกตามสาขา ในหน้าเดียว รู้ทันทีว่าทีมพร้อมงานไหนและต้องเร่งเรื่องใด'],
+  plan: ['แผนการเรียนและกำหนดเรียนจบ', 'ติดตามว่าพนักงานเรียนแต่ละบทจบตามกำหนดหรือไม่ เห็นคนที่เลยกำหนดทันที และปรับจำนวนวันของแต่ละบทได้เอง'],
   users: ['จัดการผู้ใช้', 'อนุมัติพนักงานที่ลงทะเบียนใหม่ แก้ไขข้อมูล กำหนดสิทธิ์ และปิดการใช้งานบัญชีของคนที่ลาออก']
 };
 function headHTML() {
-  const v = H.view === 'users' ? 'users' : mapOn() ? 'map' : 'dash', [t, p] = HEAD_T[v];
+  const v = H.view === 'users' ? 'users' : mapOn() ? 'map' : planOn() ? 'plan' : 'dash', [t, p] = HEAD_T[v];
   const nPend = usersOn() && DA.auth.pendingCount ? DA.auth.pendingCount() : 0;
   return `<div><div class="eyebrow">สำหรับหัวหน้าและ HR</div><h2>${t}</h2><p>${p}</p></div>
-    ${DA.skills || usersOn() ? `<span class="hr-tabs" role="group" aria-label="มุมมองหน้า HR">
-      <button data-act="hr-view" data-v="dash" aria-pressed="${v === 'dash'}">${ic('chart')}ภาพรวมคะแนน</button>
-      ${DA.skills ? `<button data-act="hr-view" data-v="map" aria-pressed="${v === 'map'}">${ic('target')}แผนที่ทักษะ</button>` : ''}
-      ${usersOn() ? `<button data-act="hr-view" data-v="users" aria-pressed="${v === 'users'}">${ic('users')}จัดการผู้ใช้${nPend ? `<span class="hr-badge" aria-label="รออนุมัติ ${nPend} คน">${nPend}</span>` : ''}</button>` : ''}</span>` : ''}`;
+    ${DA.skills || DA.plan || usersOn() ? `<span class="hr-tabs" role="group" aria-label="มุมมองหน้า HR">
+      <button data-act="hr-view" data-v="dash" aria-pressed="${v === 'dash'}">${ic('chart')}<span>ภาพรวม<span class="tl">คะแนน</span></span></button>
+      ${DA.skills ? `<button data-act="hr-view" data-v="map" aria-pressed="${v === 'map'}">${ic('target')}<span><span class="tl">แผนที่</span>ทักษะ</span></button>` : ''}
+      ${DA.plan ? `<button data-act="hr-view" data-v="plan" aria-pressed="${v === 'plan'}">${ic('cal')}<span>แผน<span class="tl">การ</span>เรียน</span></button>` : ''}
+      ${usersOn() ? `<button data-act="hr-view" data-v="users" aria-pressed="${v === 'users'}">${ic('users')}<span><span class="tl">จัดการ</span>ผู้ใช้</span>${nPend ? `<span class="hr-badge" aria-label="รออนุมัติ ${nPend} คน">${nPend}</span>` : ''}</button>` : ''}</span>` : ''}`;
 }
 function setView(v) {
   const was = H.view;
-  H.view = v === 'map' ? 'map' : v === 'users' && usersOn() ? 'users' : 'dash';
+  H.view = v === 'map' ? 'map' : v === 'plan' && DA.plan ? 'plan' : v === 'users' && usersOn() ? 'users' : 'dash';
   if (S.route.name !== 'hr' || !$('#hr-body') || was === 'users' || H.view === 'users') { DA.go({ name: 'hr', view: H.view }); return; }
   S.route = { name: 'hr', view: H.view };
   $('#hr-head').innerHTML = headHTML();
@@ -205,7 +224,7 @@ function render(main) {
     return;
   }
   ensureSub();
-  H.view = S.route.view === 'map' ? 'map' : 'dash';
+  H.view = S.route.view === 'map' ? 'map' : S.route.view === 'plan' && DA.plan ? 'plan' : 'dash';
   main.innerHTML = `<section class="section-tight"><div class="wrap fade-in">
     <div class="sec-head" id="hr-head">${headHTML()}</div>
     <div id="hr-src"></div>
@@ -224,7 +243,7 @@ function render(main) {
 }
 function refreshDash() {
   if (!$('#hr-body')) return;
-  const k = src(), all = rowsOf(k), adm = canAdmin(), nReal = Object.keys(H.real.prog).length;
+  const k = src(), all = rowsOf(k), adm = canAdmin(), nReal = nRealRows();
   $('#hr-seg').innerHTML = adm ? `<span class="seg" role="group" aria-label="แหล่งข้อมูล">
       <button data-act="hr-src" data-v="real" aria-pressed="${k === 'real'}">ข้อมูลจริง${H.real.state === 'ready' ? ` (${nReal})` : ''}</button>
       <button data-act="hr-src" data-v="sample" aria-pressed="${k === 'sample'}">ข้อมูลตัวอย่าง</button></span>` : '';
@@ -253,8 +272,9 @@ function filtered() {
 function renderBody() {
   const body = $('#hr-body'); if (!body) return;
   const list = filtered().map(r => Object.assign(r, { s: stats(r) }));
+  if (planOn()) { H.cd = null; DA.plan.hrDraw(body, list); return; }
   if (!list.length) {
-    const none = src() === 'real' && H.real.state === 'ready' && !Object.keys(H.real.prog).length;
+    const none = src() === 'real' && H.real.state === 'ready' && !nRealRows();
     body.innerHTML = `<div class="note">${ic('users')}<div>${none ? 'ยังไม่มีผู้เรียนส่งคะแนนเข้าระบบ เมื่อพนักงานเริ่มเรียนผ่านลิงก์นี้ คะแนนจะแสดงที่นี่อัตโนมัติ' : 'ไม่พบผู้เรียนตามเงื่อนไขที่เลือก'}</div></div>`;
     H.cd = null; return;
   }
@@ -285,7 +305,7 @@ function renderBody() {
     <div class="sec-head" style="margin:26px 0 12px;align-items:center"><div><h3 style="font-size:19px;font-weight:500">รายชื่อผู้เรียน</h3></div>
       <span class="muted" style="font-size:13.5px">คลิกชื่อเพื่อดูรายละเอียดและบันทึกผลประเมินหน้างาน</span></div>
     <div class="tbl-wrap"><table>
-      <thead><tr><th>ผู้เรียน</th><th>สาขา</th><th>บทที่สอบผ่าน</th><th class="num">ก่อนเรียน</th><th class="num">หลังเรียน</th><th>สถานะ</th><th>ใช้งานล่าสุด</th></tr></thead>
+      <thead><tr><th>ผู้เรียน</th><th>สาขา</th><th>บทที่สอบผ่าน</th><th class="num">ก่อนเรียน</th><th class="num">หลังเรียน</th><th>สถานะ</th>${DA.plan ? '<th>ตามแผน</th>' : ''}<th>ใช้งานล่าสุด</th></tr></thead>
       <tbody>${sorted.map(rowHTML).join('')}</tbody></table></div>`;
   H.cd = chartData(list);
   drawCharts();
@@ -300,6 +320,7 @@ function rowHTML(r) {
     <td class="num">${s.pre == null ? '–' : s.pre + '%'}</td>
     <td class="num">${s.post == null ? '–' : `<b style="font-weight:500">${s.post}%</b>`}</td>
     <td>${stCell(s.st)}</td>
+    ${DA.plan ? `<td>${DA.plan.hrCell(r.prog)}</td>` : ''}
     <td style="white-space:nowrap">${rel(s.last)}</td></tr>`;
 }
 
@@ -417,15 +438,16 @@ async function exportCsv() {
   if (!list.length) { toast('ไม่มีข้อมูลให้ส่งออก'); return; }
   /* เวอร์ชันเว็บมีรหัสพนักงานจากทะเบียนผู้ใช้ จึงใส่เป็นคอลัมน์แรกไว้ใช้อ้างอิงกับระบบ HR (ใน Artifact ไม่มีคอลัมน์นี้) */
   const emp = list.some(r => r.prog.profile.empCode);
-  const head = (emp ? ['รหัสพนักงาน'] : []).concat(['ชื่อ', 'ชื่อเล่น', 'สาขา', 'วันที่เริ่มงาน', 'สถานะ', 'บทที่สอบผ่าน', 'เฉลี่ยก่อนเรียน (%)', 'เฉลี่ยหลังเรียน (%)']);
-  DRAFT.forEach(m => head.push(`บทที่ ${modNo(m)} ก่อนเรียน`, `บทที่ ${modNo(m)} หลังเรียน`, `บทที่ ${modNo(m)} สถานะ`));
+  const head = (emp ? ['รหัสพนักงาน'] : []).concat(['ชื่อ', 'ชื่อเล่น', 'สาขา', 'วันที่เริ่มงาน', 'สถานะ', 'บทที่สอบผ่าน', 'เฉลี่ยก่อนเรียน (%)', 'เฉลี่ยหลังเรียน (%)'], DA.plan ? DA.plan.csvHead() : []);
+  DRAFT.forEach(m => { head.push(`บทที่ ${modNo(m)} ก่อนเรียน`, `บทที่ ${modNo(m)} หลังเรียน`, `บทที่ ${modNo(m)} สถานะ`); if (DA.plan) head.push(`บทที่ ${modNo(m)} ตามแผน`); });
   head.push('ใช้งานล่าสุด');
   const rows = [head];
   for (const r of list) {
     const p = r.prog.profile, s = r.s;
     const row = (emp ? [p.empCode || ''] : []).concat([nameOf(r), p.nickname, branchOf(r)]);
     row.push(p.startDate, ST[s.st].label, `${s.passed}/${DRAFT.length}`, s.pre == null ? '' : s.pre, s.post == null ? '' : s.post);
-    DRAFT.forEach(m => { const md = gm(m.id, r.prog), st = modStatus(m, r.prog, r.so); row.push(md.pre ? md.pre.score : '', md.post ? md.post.best : '', st.short || st.label); });
+    if (DA.plan) row.push(...DA.plan.csvRow(r.prog));
+    DRAFT.forEach(m => { const md = gm(m.id, r.prog), st = modStatus(m, r.prog, r.so); row.push(md.pre ? md.pre.score : '', md.post ? md.post.best : '', st.short || st.label); if (DA.plan) row.push(DA.plan.csvMod(m, r.prog)); });
     row.push(s.last ? new Date(s.last).toLocaleString('th-TH') : '');
     rows.push(row);
   }
@@ -448,7 +470,7 @@ async function exportCsv() {
 /* ── รายบุคคล ── */
 function personRow() {
   const r = S.route, k = r.src || src();
-  if (k === 'real') { const p = H.real.prog[r.id], ov = DA.platform && DA.platform.overlay; return p ? { id: r.id, prog: (ov && ov(r.id, p)) || p, so: H.real.so[r.id] || null, k } : null; }
+  if (k === 'real') { const p = realProg(r.id), ov = DA.platform && DA.platform.overlay; return p ? { id: r.id, prog: (ov && ov(r.id, p)) || p, so: H.real.so[r.id] || null, k } : null; }
   if (!H.sample) buildSample();
   const x = H.sample.find(s => s.id === r.id);
   return x ? { id: x.id, prog: x.prog, so: H.sampleSo[x.id] || null, k } : null;
@@ -457,7 +479,8 @@ const evaluator = () => { const v = DA.lsGet(EVAL_KEY); return typeof v === 'str
 function renderPerson(main, id) {
   ensureSub();
   const r = personRow();
-  const back = `<button class="btn btn-text btn-sm" data-act="hr-view" data-v="${mapOn() ? 'map' : 'dash'}" style="margin:-8px 0 10px -10px">${ic('arrowL')}${mapOn() ? 'กลับไปแผนที่ทักษะ' : 'กลับไปภาพรวม HR'}</button>`;
+  const bv = mapOn() ? 'map' : planOn() ? 'plan' : 'dash';
+  const back = `<button class="btn btn-text btn-sm" data-act="hr-view" data-v="${bv}" style="margin:-8px 0 10px -10px">${ic('arrowL')}${{ map: 'กลับไปแผนที่ทักษะ', plan: 'กลับไปแผนการเรียน', dash: 'กลับไปภาพรวม HR' }[bv]}</button>`;
   if (!r) {
     const loading = S.route.src === 'real' && H.real.state !== 'ready' && H.real.state !== 'error';
     main.innerHTML = `<section class="section-tight"><div class="wrap">${back}<div class="note${loading ? '' : ' warn'}">${ic(loading ? 'cloud' : 'info')}<div>${loading ? 'กำลังโหลดข้อมูลผู้เรียน…' : 'ไม่พบข้อมูลผู้เรียนคนนี้'}</div></div></div></section>`;
@@ -489,7 +512,7 @@ function refreshPerson() {
       <div style="flex:1;min-width:180px"><div class="eyebrow">ผู้เรียน</div>
         <h2 style="color:var(--brand-text);font-size:clamp(22px,2.6vw,28px)">${esc(nameOf(r))}${p.nickname ? ` <span class="muted" style="font-size:.7em;font-weight:400">(${esc(p.nickname)})</span>` : ''}</h2>
         <div class="muted small">${p.empCode ? 'รหัส ' + esc(p.empCode) + ' · ' : ''}${esc(branchOf(r))}${p.startDate ? ' · เริ่มงาน ' + esc(fmtDate(new Date(p.startDate).getTime())) : ''} · ใช้งานล่าสุด ${rel(s.last)}</div></div>
-      <span class="chip ${st.chip}" style="font-size:13.5px;padding:5px 12px">${st.label}</span></div></div>
+      <span class="p-chips"><span class="chip ${st.chip}" style="font-size:13.5px;padding:5px 12px">${st.label}</span>${DA.plan ? DA.plan.personChip(r.prog) : ''}</span></div></div>
     <div class="kpis k4">
       <div class="kpi"><span>บทที่สอบผ่าน</span><b>${s.passed}/${DRAFT.length}</b><small>เกณฑ์ ${PASS}%</small></div>
       <div class="kpi"><span>เฉลี่ยก่อนเรียน</span><b>${s.pre == null ? '–' : s.pre + '%'}</b><small>${s.pres.length} บท</small></div>
@@ -514,6 +537,7 @@ function cardHTML(m, r) {
       <span class="chip">ก่อนเรียน ${md.pre ? md.pre.score + '%' : '–'}</span>
       <span class="chip${md.post && md.post.best >= PASS ? ' chip-ok' : md.post ? ' chip-bad' : ''}">หลังเรียน ${md.post ? md.post.best + '%' + (md.post.attempts > 1 ? ` · สอบ ${md.post.attempts} ครั้ง` : '') : '–'}</span>
       <span class="chip">แบบฝึก ${pd.length}/${m.practice.length}${pAvg == null ? '' : ` · เฉลี่ย ${pAvg}%`}</span>
+      ${DA.plan ? DA.plan.modChip(m, r.prog) : ''}
     </div>
     <div class="cl">${items}</div>
     <div class="muted" style="font-size:13px;margin-top:10px">ประเมินแล้ว ${nOn}/${m.checklist.length} ข้อ${so && so.by ? ` · ล่าสุดโดย ${esc(so.by)} ${esc(fmtDate(so.at))}` : ''}</div>

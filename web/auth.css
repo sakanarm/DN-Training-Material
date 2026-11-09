@@ -236,3 +236,50 @@ body:has(.gate){padding-bottom:0}
   .g-spin{animation-duration:2.4s}
   .g-ico.warn svg,.gate-denta .mascot{animation:none}
 }
+
+/* ── ติดตั้งเป็นแอป (web/pwa.js) ── */
+.pwa-gate{display:flex;justify-content:center;margin-top:16px}
+.pwa-gate:empty{display:none}
+.pwa-pill{display:inline-flex;align-items:center;gap:8px;border:1.6px solid var(--line);background:var(--surface);color:var(--text);border-radius:999px;padding:8px 16px;font:inherit;font-weight:800;font-size:14px;box-shadow:var(--hard-xs);cursor:pointer}
+.pwa-pill svg{width:18px;height:18px;flex:none;color:var(--brand-text)}
+.pwa-pill:hover{background:var(--surface-2)}
+.pwa-pill:active{transform:translateY(1px);box-shadow:none}
+.pwa-bar{position:fixed;left:12px;right:12px;bottom:calc(16px + env(safe-area-inset-bottom,0px));z-index:45;display:flex;align-items:center;gap:12px;max-width:520px;margin:0 auto;background:var(--surface);color:var(--text);border:var(--bw) solid var(--line);border-radius:20px;padding:10px 10px 10px 12px;box-shadow:var(--hard),var(--shadow-lg);animation:pwa-in .28s ease-out}
+.pwa-bar > img{width:44px;height:44px;border-radius:12px;flex:none}
+.pwa-ico{width:44px;height:44px;border-radius:12px;flex:none;display:grid;place-items:center;background:var(--sun);color:#2B2440;border:1.6px solid var(--line)}
+.pwa-ico svg{width:22px;height:22px}
+.pwa-bar-t{flex:1;min-width:0;display:grid;line-height:1.35}
+.pwa-bar-t b{font-size:15px}
+.pwa-bar-t span{font-size:13px;color:var(--muted)}
+.pwa-bar .btn{flex:none}
+.pwa-x{flex:none;width:36px;height:36px;display:grid;place-items:center;border:0;background:none;border-radius:10px;color:var(--muted);cursor:pointer}
+.pwa-x:hover,.pwa-x:focus-visible{background:var(--surface-2);color:var(--text)}
+.pwa-x svg{width:18px;height:18px}
+@keyframes pwa-in{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+.pwa-sheet{border:var(--bw) solid var(--line);border-radius:24px;padding:0;width:min(440px,calc(100vw - 24px));max-width:none;background:var(--surface);color:var(--text);box-shadow:var(--hard),var(--shadow-lg)}
+.pwa-sheet::backdrop{background:rgba(7,10,25,.45)}
+.pwa-in{padding:22px;display:grid;gap:14px}
+.pwa-head{display:flex;align-items:center;gap:14px}
+.pwa-head img{width:52px;height:52px;border-radius:14px;flex:none}
+.pwa-head h2{margin:0;font-size:19px;line-height:1.35}
+.pwa-head p{margin:2px 0 0;color:var(--muted);font-size:14px;line-height:1.45}
+.pwa-steps{list-style:none;margin:0;padding:0;display:grid;gap:8px;counter-reset:pwa}
+.pwa-steps li{counter-increment:pwa;display:flex;gap:12px;align-items:flex-start;background:var(--surface-2);border-radius:14px;padding:10px 12px;font-size:15px;line-height:1.6}
+.pwa-steps li::before{content:counter(pwa);flex:none;width:26px;height:26px;border-radius:50%;display:grid;place-items:center;background:var(--sun);color:#2B2440;border:1.6px solid var(--line);font-weight:800;font-size:14px;margin-top:1px}
+.pwa-steps small{display:block;color:var(--muted);font-size:13px;line-height:1.5;margin-top:2px}
+.pwa-key{display:inline-grid;place-items:center;width:26px;height:26px;border-radius:8px;background:var(--surface);border:1.6px solid var(--border-2);vertical-align:-7px;margin:0 2px;color:var(--brand-text)}
+.pwa-key svg{width:16px;height:16px}
+.pwa-note{display:flex;gap:8px;margin:0;font-size:13.5px;color:var(--muted);line-height:1.55}
+.pwa-note svg{width:18px;height:18px;flex:none;margin-top:2px}
+.pwa-acts{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap}
+.pwa-ext{flex-basis:100%;justify-content:center}
+.pwa-ext svg{width:18px;height:18px;flex:none}
+@media (max-width:560px){
+  .pwa-sheet{margin:auto auto 0;width:100%;border-radius:24px 24px 0 0;border-bottom:0;padding-bottom:env(safe-area-inset-bottom,0px)}
+  .pwa-acts .btn{flex:1;justify-content:center}
+  .pwa-bar{gap:10px}
+  .pwa-bar-t span{font-size:12.5px}
+}
+@media (prefers-reduced-motion:reduce){
+  .pwa-bar{animation:none}
+}

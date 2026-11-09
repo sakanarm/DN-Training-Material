@@ -155,8 +155,17 @@ const isMgr = d => !!d && d.status === 'active' && (d.role === 'hr' || d.role ==
 const G = { u: null, d: null, unsub: null, booted: false, bootRole: '', bootStatus: '', view: 'loading', tab: 'in', err: '', info: '', editing: false, upTried: false, busy: false, shared: !!lsGet(SHARED_KEY), verifySent: false, kick: "" };
 
 function stopMe() { if (G.unsub) { try { G.unsub(); } catch (e) { /* ปิดไปแล้ว */ } G.unsub = null; } }
+/* เก็บข้อมูลบัญชีและคะแนนในเครื่อง ให้เปิดแอปได้ตอนสัญญาณอ่อน/ออฟไลน์ · ไม่เปิดบนเครื่องส่วนกลาง
+   ต้องเรียกก่อนใช้ Firestore ครั้งแรก (watchMe คือครั้งแรก) · ออกจากระบบแล้วล้างทิ้ง */
+let cacheTried = false;
+function keepOffline() {
+  if (cacheTried || G.shared || typeof fs.enablePersistence !== 'function') return;
+  cacheTried = true;
+  try { fs.enablePersistence({ synchronizeTabs: true }).catch(() => { /* เบราว์เซอร์ไม่รองรับ ใช้แบบออนไลน์ตามเดิม */ }); } catch (e) { /* เริ่ม Firestore ไปแล้ว */ }
+}
 function watchMe(u) {
   stopMe();
+  keepOffline();
   G.unsub = fs.doc('users/' + u.uid).onSnapshot({ includeMetadataChanges: true }, s => {
     if (s.metadata.hasPendingWrites) return;
     if (!s.exists && s.metadata.fromCache) return; /* ยังไม่ได้คำตอบจากเซิร์ฟเวอร์ */
@@ -328,13 +337,13 @@ function simpleHTML(icon, tone, title, body, acts) {
 function gate(view) {
   G.view = view;
   let inner;
-  if (view === 'loading') inner = `<div class="g-load" role="status"><span class="g-spin" aria-hidden="true"></span>กำลังตรวจสอบบัญชี…</div>`;
+  if (view === 'loading') inner = `<div class="g-load" role="status"><span class="g-spin" aria-hidden="true"></span>${navigator.onLine === false ? 'ยังไม่ได้เชื่อมต่ออินเทอร์เน็ต ระบบจะเข้าให้อัตโนมัติเมื่อมีสัญญาณ' : 'กำลังตรวจสอบบัญชี…'}</div>`;
   else if (view === 'signin') inner = signinHTML();
   else if (view === 'register') inner = registerHTML();
   else if (view === 'pending' || view === 'rejected' || view === 'disabled') inner = statusHTML(view);
   else if (view === 'setup') inner = simpleHTML(si('plug'), 'warn', 'ยังไม่ได้ตั้งค่า Firebase', 'ใส่ค่าโปรเจกต์ Firebase ของคลินิกใน <code>web/site.json</code> แล้วสั่ง <code>python scripts/build_web.py</code> ใหม่ ดูขั้นตอนใน <code>web/README.md</code>');
   else inner = simpleHTML(si('wifi'), 'bad', 'เชื่อมต่อระบบไม่ได้', esc(G.err || 'ลองใหม่อีกครั้ง'), `<button class="btn btn-brand btn-sm" data-gate="retry">${ic('refresh')}ลองใหม่</button>${G.u ? `<button class="btn btn-ghost btn-sm" data-gate="out">${si('out')}ออกจากระบบ</button>` : ''}`);
-  $('#app').innerHTML = `<div class="gate" id="gate"><div class="gate-in">${heroHTML()}<section class="gate-card" aria-labelledby="g-title">${inner.replace('<h2>', '<h2 id="g-title">')}</section></div>
+  $('#app').innerHTML = `<div class="gate" id="gate"><div class="gate-in">${heroHTML()}<section class="gate-card" aria-labelledby="g-title">${inner.replace('<h2>', '<h2 id="g-title">')}</section>${DA.pwa ? DA.pwa.gateHTML() : ''}</div>
     <p class="gate-foot">Smile Gallery Dental Clinic · ระบบฝึกอบรมผู้ช่วยทันตแพทย์ · ข้อมูลใช้ภายในคลินิกเท่านั้น</p></div>`;
   G.info = '';
 }
@@ -441,6 +450,8 @@ function onGateSubmit(e) {
 async function signOut() {
   stopMe(); stopUsers();
   try { await auth.signOut(); } catch (e) { /* ออกต่อได้ */ }
+  /* ข้อมูล Firestore ที่เก็บไว้ในเครื่อง (keepOffline) ล้างทิ้งด้วย */
+  try { await fs.terminate(); await fs.clearPersistence(); } catch (e) { /* ไม่ได้เปิดไว้ */ }
   /* เครื่องส่วนกลาง: ไม่ทิ้งคะแนนและชื่อผู้ประเมินของคนก่อนไว้ในเบราว์เซอร์ */
   [LS_KEY, LS_PREFS, EVAL_KEY].forEach(k => { try { localStorage.removeItem(k); } catch (e) { /* ไม่มีที่เก็บ */ } });
   location.reload();
@@ -453,6 +464,7 @@ function bootApp(u, d) {
   if (mgr && !lsGet(EVAL_KEY)) lsSet(EVAL_KEY, d.name);
   DA.platform = makePlatform(u, d, mgr);
   DA.boot();
+  if (DA.pwa) DA.pwa.onBoot();
   $$('[data-nav="hr"]').forEach(b => { if (!b.querySelector('.ndot')) b.insertAdjacentHTML('beforeend', '<i class="ndot" aria-hidden="true"></i>'); });
   document.addEventListener('click', closePopOutside);
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && popOpen()) { closePop(); const b = $('.acct-btn'); if (b) b.focus(); } });
@@ -491,6 +503,8 @@ function makePlatform(u, d, mgr) {
       fs.doc('users/' + u.uid).update({ name, nickname: str(p.nickname, 30), branch: str(p.branch, 60), startDate: isoOK(str(p.startDate, 10)), profileAt: num(p.at) || Date.now(), updatedAt: Date.now() })
         .catch(() => toast('อัปเดตทะเบียนผู้ใช้ไม่สำเร็จ ข้อมูลในหน้านี้ยังบันทึกไว้'));
     },
+    /* ผู้เรียนที่อนุมัติแล้วทุกคน (รวมคนที่ยังไม่เคยเปิดบทเรียน) ให้ HR เห็นและติดตามตามแผนได้ */
+    roster: () => UL.list.filter(x => x.status === 'active' && x.role === 'learner').map(x => x.id),
     /* HR เห็นชื่อ/สาขาล่าสุดจากทะเบียนผู้ใช้ และไม่เห็นบัญชีที่ปิดหรือไม่อนุมัติ */
     overlay(id, p) {
       const x = UL.map[id];
@@ -514,6 +528,7 @@ function acctPopHTML() {
     <div class="acct-list" role="menu">
       <button role="menuitem" data-act="go" data-r="profile">${ic('user')}ข้อมูลของฉัน</button>
       ${mgr ? `<button role="menuitem" data-act="acct-users">${ic('users')}จัดการผู้ใช้${pendingCount() ? `<span class="hr-badge">${pendingCount()}</span>` : ''}</button>` : ''}
+      ${DA.pwa ? DA.pwa.menuHTML() : ''}
       <button role="menuitem" class="danger" data-act="acct-out">${si('out')}<span>ออกจากระบบ</span></button>
     </div>`;
 }
@@ -722,6 +737,9 @@ function start() {
   if (!window.firebase || typeof firebase.initializeApp !== 'function') { G.err = 'โหลดระบบเข้าสู่ระบบไม่สำเร็จ ตรวจอินเทอร์เน็ตแล้วลองใหม่'; return gate('error'); }
   try { init(); } catch (e) { G.err = 'ตั้งค่า Firebase ไม่ถูกต้อง: ' + ((e && e.message) || e); return gate('error'); }
   gate('loading');
+  /* หน้า "กำลังตรวจสอบบัญชี" บอกเมื่อไม่มีอินเทอร์เน็ต และเปลี่ยนกลับเองเมื่อมีสัญญาณ */
+  const relo = () => { if (G.view === 'loading' && !G.booted && $('#gate')) gate('loading'); };
+  window.addEventListener('online', relo); window.addEventListener('offline', relo);
   auth.onAuthStateChanged(onAuth, () => { G.err = 'ตรวจสอบการเข้าสู่ระบบไม่ได้'; gate('error'); });
 }
 DA.auth = { start, renderUsers, pendingCount };
