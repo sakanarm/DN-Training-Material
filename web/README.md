@@ -39,7 +39,8 @@
    ```bash
    python scripts/build_web.py --fake --serve
    ```
-   - เปิด http://127.0.0.1:8766/?reset=1&as=hr
+   - เปิด http://127.0.0.1:18766/?reset=1&as=hr
+   - ถ้าขึ้น `WinError 10013` แปลว่า Windows จองพอร์ตนั้นไว้ ดูช่วงที่จองได้ด้วย `netsh int ipv4 show excludedportrange protocol=tcp` แล้วเปลี่ยน `PORT` ใน `scripts/build_web.py` และ `.claude/launch.json` ให้ตรงกัน
    - เปลี่ยน `as=` ได้เป็น `admin`, `learner`, `pending` หรือ `new`
    - `as=google` คือบัญชี Google ใหม่ที่ยังไม่ลงทะเบียน (ปุ่ม Google ในเว็บจำลองเปิดหน้าต่างเลือกบัญชีจำลอง ไม่ใช่ Google จริง)
 3. สร้างไฟล์จริงแล้วขึ้นเว็บ:

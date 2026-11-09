@@ -3,7 +3,7 @@
 index.html is written for the claude.ai Artifact tool, which adds the
 <!doctype>/<html>/<head>/<body> skeleton at publish time. This script builds
 that same skeleton into .preview/ (gitignored), copies the scripts and images
-next to it, and serves it on http://127.0.0.1:8765.
+next to it, and serves it on http://127.0.0.1:18765.
 
     python scripts/preview.py            # build + serve
     python scripts/preview.py --build    # build only
@@ -20,7 +20,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / ".preview"
-PORT = 8765
+PORT = 18765
 HEAD = (
     '<!doctype html><html><head><meta charset="utf-8">'
     '<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">'

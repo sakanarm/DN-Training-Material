@@ -5,13 +5,13 @@
       "name": "da-preview",
       "runtimeExecutable": "python",
       "runtimeArgs": ["scripts/preview.py"],
-      "port": 8765
+      "port": 18765
     },
     {
       "name": "da-web-fake",
       "runtimeExecutable": "python",
       "runtimeArgs": ["scripts/build_web.py", "--fake", "--serve"],
-      "port": 8766
+      "port": 18766
     }
   ]
 }

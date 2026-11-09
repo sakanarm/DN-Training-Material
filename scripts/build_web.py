@@ -13,7 +13,7 @@ deploy Firebase project:
 
 Usage:
     python scripts/build_web.py              # build dist-web/ from web/site.json
-    python scripts/build_web.py --serve      # build, then serve public/ on :8766
+    python scripts/build_web.py --serve      # build, then serve public/ on :18766
     python scripts/build_web.py --fake --serve
         # local demo with an in-browser fake Firebase (web/dev/fake-firebase.js),
         # built into .preview-web/ so it can never be deployed by mistake
@@ -34,7 +34,7 @@ ROOT = Path(__file__).resolve().parent.parent
 WEB = ROOT / "web"
 OUT_REAL = ROOT / "dist-web"
 OUT_FAKE = ROOT / ".preview-web"
-PORT = 8766
+PORT = 18766
 SDK = "https://www.gstatic.com/firebasejs/10.12.2/"
 SDK_FILES = ["firebase-app-compat.js", "firebase-auth-compat.js", "firebase-firestore-compat.js"]
 CONFIG_KEYS = ["apiKey", "authDomain", "projectId", "storageBucket", "messagingSenderId", "appId"]
